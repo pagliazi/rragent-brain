@@ -12,7 +12,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from rragent.evolution.autoresearch_loop import StrategyResearchLoop
+    from evolution.autoresearch_loop import StrategyResearchLoop
 
 logger = logging.getLogger("rragent.commands.research")
 

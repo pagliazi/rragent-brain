@@ -25,7 +25,7 @@ from rragent.runtime.session import Session
 from rragent.tools.registry import GlobalToolRegistry
 from rragent.tools.executor import ToolExecutor
 from rragent.tools.pyagent.bridge import PyAgentBridge, register_pyagent_tools
-from rragent.channels.gateway import GatewayChannel
+from gateway.gateway import GatewayChannel
 
 logging.basicConfig(
     level=logging.INFO,
@@ -311,7 +311,7 @@ class RRClawServer:
     def _init_background_review(self):
         """Initialize background review system (P3)."""
         try:
-            from rragent.evolution.background_review import BackgroundReviewSystem
+            from evolution.background_review import BackgroundReviewSystem
             self.background_review = BackgroundReviewSystem(self.config)
         except ImportError:
             self.background_review = None

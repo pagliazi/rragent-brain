@@ -90,19 +90,19 @@ from rragent.runtime.resilience.error_classifier import RRClawErrorClassifier
 
 # P3 imports
 from rragent.tools.hermes.runtime import HermesNativeRuntime
-from rragent.evolution.background_review import BackgroundReviewSystem
-from rragent.evolution.engine import EvolutionEngine
-from rragent.skills.loader import SkillLoader
-from rragent.skills.executor import SkillExecutor
+from evolution.background_review import BackgroundReviewSystem
+from evolution.engine import EvolutionEngine
+from skills.loader import SkillLoader
+from skills.executor import SkillExecutor
 from rragent.context.memory.tier1_session import SessionMemory
 from rragent.context.memory.tier2_user import UserMemory
 from rragent.context.memory.tier3_system import SystemMemory
 
 # P4 imports
-from rragent.evolution.gepa_pipeline import GEPAPipeline
-from rragent.evolution.autoresearch_loop import StrategyResearchLoop
-from rragent.commands.evolve import EvolveCommand
-from rragent.commands.research import ResearchCommand
+from evolution.gepa_pipeline import GEPAPipeline
+from evolution.autoresearch_loop import StrategyResearchLoop
+from commands.evolve import EvolveCommand
+from commands.research import ResearchCommand
 
 # State
 sessions: dict[str, Session] = {}

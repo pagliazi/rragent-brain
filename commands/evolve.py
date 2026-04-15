@@ -15,9 +15,9 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from rragent.evolution.engine import EvolutionEngine
-    from rragent.evolution.gepa_pipeline import GEPAPipeline
-    from rragent.evolution.skill_creator import SkillCreator
+    from evolution.engine import EvolutionEngine
+    from evolution.gepa_pipeline import GEPAPipeline
+    from evolution.skill_creator import SkillCreator
     from rragent.context.memory.tier3_system import SystemMemory
 
 logger = logging.getLogger("rragent.commands.evolve")

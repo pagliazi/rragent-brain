@@ -18,7 +18,7 @@ from typing import TYPE_CHECKING, Any
 from rragent.tools.base import Tool, ToolResult, ToolSpec
 
 if TYPE_CHECKING:
-    from rragent.channels.gateway import GatewayChannel
+    from gateway.gateway import GatewayChannel
 
 logger = logging.getLogger("rragent.tools.builtin.canvas")
 

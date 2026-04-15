@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from rragent.evolution.correction_tracker import CorrectionTracker
+    from .correction_tracker import CorrectionTracker
     from rragent.tools.hermes.runtime import HermesNativeRuntime
     from rragent.runtime.session import Session
 

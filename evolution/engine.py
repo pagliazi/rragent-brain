@@ -20,10 +20,10 @@ import time
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from rragent.evolution.correction_tracker import CorrectionTracker
-    from rragent.evolution.pattern_detector import PatternDetector, ExecutionEvent
-    from rragent.evolution.failure_detector import FailureDetector
-    from rragent.evolution.skill_creator import SkillCreator
+    from .correction_tracker import CorrectionTracker
+    from .pattern_detector import PatternDetector, ExecutionEvent
+    from .failure_detector import FailureDetector
+    from .skill_creator import SkillCreator
     from rragent.runtime.resilience.circuit_breaker import CircuitBreaker
     from rragent.runtime.resilience.health_monitor import HealthMonitor
 
@@ -205,7 +205,7 @@ class EvolutionEngine:
     def _parse_event(self, data: dict) -> Any | None:
         """Parse a Redis stream message into an ExecutionEvent."""
         try:
-            from rragent.evolution.pattern_detector import ExecutionEvent
+            from .pattern_detector import ExecutionEvent
 
             # Redis returns bytes, decode
             decoded = {}

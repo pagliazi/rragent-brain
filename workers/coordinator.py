@@ -15,7 +15,7 @@ import logging
 import time
 from dataclasses import dataclass, field
 
-from rragent.workers.boot import Worker, WorkerState, WorkerStatus
+from .boot import Worker, WorkerState, WorkerStatus
 
 logger = logging.getLogger("rragent.workers.coordinator")
 

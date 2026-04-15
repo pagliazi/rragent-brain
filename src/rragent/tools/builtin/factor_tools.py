@@ -13,7 +13,7 @@ import time
 from typing import Any
 
 # Add rragent-brain to path for alpha_digger import
-BRAIN_PATH = os.getenv("BRAIN_PATH", os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+BRAIN_PATH = os.getenv("BRAIN_PATH", os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))))
 if BRAIN_PATH not in sys.path:
     sys.path.insert(0, BRAIN_PATH)
 

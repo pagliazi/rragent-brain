@@ -1,21 +1,30 @@
 # RRAgent Harness 控制层架构文档
 
-> **注意**: 本文档描述 `rragent/` Harness 控制层。完整系统架构（含 agents/ 执行层）请见根目录 `README.md`。
+> **注意**: 本文档描述 `src/rragent/` Harness 控制层。完整系统架构（含 agents/ 执行层）请见根目录 `README.md`。
 
 ## 项目路径
 
 ```
 ~/RRAgent-Universe/rragent-brain/   # 统一项目根目录（合并后唯一真实来源）
-├── rragent/                        # Harness 控制层 Python 包（本文档描述此层）
+├── src/
+│   └── rragent/                    # Harness 控制层 Python 包（纯 LLM 核心，本文档描述此层）
 ├── agents/                         # PyAgent 执行层 (12 个 agent)
-├── rragent_server.py               # 主 FastAPI 服务入口 (5,292 行)
-├── webchat_api.py                  # 旧 FastAPI 服务 (保留兼容, 4,597 行)
+├── gateway/                        # IM 网关层 (was rragent/channels/)
+├── evolution/                      # 自学习/进化引擎 (was rragent/evolution/)
+├── workers/                        # 工作线程管理 (was rragent/workers/)
+├── skills/                         # 技能库 (was rragent/skills/)
+├── permissions/                    # 权限控制 (was rragent/permissions/)
+├── commands/                       # 命令处理 (was rragent/commands/)
+├── server.py                       # 主 FastAPI 服务入口 (was server.py)
+├── mcp_serve.py                    # MCP server 入口
+├── rragent                         # CLI 管理工具 (was rragent)
+├── webchat_api.py                  # 旧 FastAPI 服务 (保留兼容)
 ├── static/                         # 新前端 (React JSX + Tailwind)
 ├── pyproject.toml                  # Python 包定义
 └── tests/                          # 全部测试
 ```
 
-## 核心包结构 (`rragent/`)
+## 核心包结构 (`src/rragent/`)
 
 ```
 rragent/
@@ -179,7 +188,7 @@ static/
 ┌─ Telegram bot ─┐
 ├─ 飞书 bot ─────┤ → Redis openclaw:orchestrator
 └─ WebUI (:7789) ┘         ↓
-                    rragent_server.py (FastAPI, 主服务)
+                    server.py (FastAPI, 主服务)
                     ├── ConversationRuntime (LLM 异步生成器循环)
                     ├── ToolSearch (Tier0 ~8 + Tier1 ~120 lazy)
                     ├── ProviderRouter (Anthropic/DashScope/OpenAI 降级链)
@@ -201,7 +210,7 @@ static/
 |------|------|------|
 | rragent/ (Harness 控制层) | ~75 | ~12,964 |
 | agents/ (PyAgent 执行层) | ~60 | ~21,745 |
-| rragent_server.py | 1 | 5,292 |
+| server.py | 1 | 5,292 |
 | webchat_api.py (旧, compat) | 1 | 4,597 |
 | run_p*.py (阶段入口) | 4 | ~400 |
 | static/ (新前端) | 12 | ~6,300 |

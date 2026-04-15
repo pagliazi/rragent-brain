@@ -8,7 +8,7 @@ import os
 import re
 from pathlib import Path
 
-from rragent.permissions.policy import PermissionPolicy, PermissionDecision
+from .policy import PermissionPolicy, PermissionDecision
 
 
 class PermissionEnforcer:

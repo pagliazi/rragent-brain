@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════
-# rragentctl — RRAgent Multi-Agent 运维管理工具
+# rragent — RRAgent Multi-Agent 运维管理工具
 # 从 registry.yaml 读取所有组件，零硬编码
 # ═══════════════════════════════════════════════════
 
@@ -151,7 +151,7 @@ _start_local() {
         source "${SCRIPT_DIR}/${env_file}"
         set +a
     fi
-    export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
+    export PYTHONPATH="${SCRIPT_DIR}:${SCRIPT_DIR}/src:${PYTHONPATH}"
 
     if [ "$type" = "agent" ]; then
         ${PYTHON} -m ${target} >> "${logfile}" 2>> "${errfile}" &
@@ -450,7 +450,7 @@ cmd_dev() {
         source "${SCRIPT_DIR}/${env_file}"
         set +a
     fi
-    export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
+    export PYTHONPATH="${SCRIPT_DIR}:${SCRIPT_DIR}/src:${PYTHONPATH}"
 
     echo -e "${CYAN}前台运行 ${name} (Ctrl+C 退出)${NC}"
     echo -e "${DIM}type=${type} target=${target}${NC}"
@@ -690,7 +690,7 @@ _gen_plists() {
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>PYTHONPATH</key>
-        <string>${work_dir}</string>
+        <string>${work_dir}:${work_dir}/src</string>
         <key>REDIS_URL</key>
         <string>redis://127.0.0.1:6379/0</string>${env_source_snippet}
     </dict>
@@ -725,7 +725,7 @@ _gen_plists() {
         <key>PATH</key>
         <string>${venv_path}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
         <key>PYTHONPATH</key>
-        <string>${work_dir}</string>
+        <string>${work_dir}:${work_dir}/src</string>
         <key>REDIS_URL</key>
         <string>redis://127.0.0.1:6379/0</string>${env_source_snippet}
     </dict>

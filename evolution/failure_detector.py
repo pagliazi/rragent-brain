@@ -14,7 +14,7 @@ import time
 from collections import defaultdict
 from dataclasses import dataclass, field
 
-from rragent.evolution.pattern_detector import ExecutionEvent
+from .pattern_detector import ExecutionEvent
 
 
 @dataclass

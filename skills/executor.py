@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from rragent.skills.loader import Skill, SkillLoader
+    from .loader import Skill, SkillLoader
     from rragent.tools.registry import GlobalToolRegistry
 
 logger = logging.getLogger("rragent.skills.executor")

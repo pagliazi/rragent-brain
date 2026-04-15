@@ -14,9 +14,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from rragent.evolution.pattern_detector import ToolChainPattern
-    from rragent.evolution.failure_detector import FailurePattern
-    from rragent.evolution.skill_guard import SkillGuard, TrustLevel
+    from .pattern_detector import ToolChainPattern
+    from .failure_detector import FailurePattern
+    from .skill_guard import SkillGuard, TrustLevel
     from rragent.tools.hermes.runtime import HermesNativeRuntime
 
 logger = logging.getLogger("rragent.evolution.skill_creator")
@@ -112,7 +112,7 @@ tools: {tools}
 
         # Security scan
         if self._guard:
-            from rragent.evolution.skill_guard import TrustLevel
+            from .skill_guard import TrustLevel
             scan = self._guard.scan(name, content, TrustLevel.AGENT_CREATED)
             if not scan.passed:
                 logger.warning(
@@ -143,7 +143,7 @@ tools: {tools}
         content = self._create_recovery_template(name, failure)
 
         if self._guard:
-            from rragent.evolution.skill_guard import TrustLevel
+            from .skill_guard import TrustLevel
             scan = self._guard.scan(name, content, TrustLevel.AGENT_CREATED)
             if not scan.passed:
                 logger.warning(f"Recovery skill {name} failed security scan")
