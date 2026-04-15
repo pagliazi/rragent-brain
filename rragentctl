@@ -1,6 +1,6 @@
 #!/bin/bash
 # ═══════════════════════════════════════════════════
-# rrclaw — ReachRich Claw Multi-Agent 运维管理工具
+# rragentctl — RRAgent Multi-Agent 运维管理工具
 # 从 registry.yaml 读取所有组件，零硬编码
 # ═══════════════════════════════════════════════════
 
@@ -29,7 +29,7 @@ CLAW_LA_DIR="${CLAW_HOME}/Library/LaunchAgents"
 CURRENT_USER="$(whoami)"
 # zayl 用户的源码目录和 PID 路径（供 clawagent 检查 zayl agent 状态时使用）
 ZAYL_HOME="/Users/zayl"
-ZAYL_SRC="${ZAYL_HOME}/OpenClaw-Universe/openclaw-brain"
+ZAYL_SRC="${ZAYL_HOME}/RRAgent-Universe/rragent-brain"
 ZAYL_PIDS="${ZAYL_SRC}/.pids"
 
 RED='\033[0;31m'

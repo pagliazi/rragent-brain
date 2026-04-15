@@ -214,7 +214,7 @@ YAO_THEMES = [
 # 妖股专用 LLM Prompt
 # ══════════════════════════════════════════════════════════════════════════════
 
-YAO_MINER_PROMPT = """你是 rrclaw 妖股因子挖掘引擎，专门挖掘A股「妖股启动前」的量化预测因子。
+YAO_MINER_PROMPT = """你是 rragent 妖股因子挖掘引擎，专门挖掘A股「妖股启动前」的量化预测因子。
 
 █ 背景知识: 什么是妖股
   A股市场中能在 5-15 个交易日涨幅超过 30% 的高弹性个股，通常有以下特征:
@@ -413,7 +413,7 @@ async def run_yao_mining_round(
     for i, seed in enumerate(seeds):
         try:
             reply = await router.chat([
-                {"role": "system", "content": "你是 rrclaw 妖股因子挖掘引擎。只输出 generate_factor 函数代码。"},
+                {"role": "system", "content": "你是 rragent 妖股因子挖掘引擎。只输出 generate_factor 函数代码。"},
                 {"role": "user", "content": seed["prompt"]},
             ], task_type="code")
         except Exception as e:

@@ -53,14 +53,14 @@ full = [
 ]
 
 [project.scripts]
-rragent = "rragent.__main__:main"
+rragent-run = "rragent.__main__:main"
 rragent-mcp = "rragent.tools.mcp.server:main"
 rragent-market = "rragent.tools.mcp.reachrich_server:main"
 
 [project.urls]
-Homepage = "https://github.com/pagliazi/rrclaw"
-Repository = "https://github.com/pagliazi/rrclaw"
-Issues = "https://github.com/pagliazi/rrclaw/issues"
+Homepage = "https://github.com/pagliazi/rragent"
+Repository = "https://github.com/pagliazi/rragent"
+Issues = "https://github.com/pagliazi/rragent/issues"
 
 [build-system]
 requires = ["hatchling"]

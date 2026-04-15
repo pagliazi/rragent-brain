@@ -401,7 +401,7 @@ async def run_meme_mining_round(
     for i, seed in enumerate(seeds):
         try:
             reply = await router.chat([
-                {"role": "system", "content": "你是 rrclaw 妖股因子挖掘引擎。只输出 generate_factor 函数代码。"},
+                {"role": "system", "content": "你是 rragent 妖股因子挖掘引擎。只输出 generate_factor 函数代码。"},
                 {"role": "user", "content": seed["prompt"]},
             ], task_type="code")
         except Exception as e:

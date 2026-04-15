@@ -42,7 +42,7 @@ def _sanitize_input(s: str, max_len: int = 1000) -> str:
 # ── 执行器: 通过 stdin 传递脚本，避免 shell 转义问题 ──
 # 注意: 本 agent 必须以 GUI 用户 (run_as: zayl) 运行，
 # 因为 macOS TCC 只允许 GUI session 中的进程访问 Calendar/Reminders 等 App。
-# rrclaw 通过 registry.yaml 的 run_as 字段控制运行用户，
+# rragentctl 通过 registry.yaml 的 run_as 字段控制运行用户，
 # agent 之间通过 Redis Pub/Sub 通信，不受运行用户差异影响。
 
 async def _run(cmd: str, timeout: int = SHELL_TIMEOUT) -> tuple[int, str]:

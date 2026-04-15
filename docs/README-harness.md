@@ -15,7 +15,7 @@
 
 > **[中文文档](README.zh-CN.md)** | English
 >
-> **This repo has moved to [pagliazi/rrclaw](https://github.com/pagliazi/rrclaw).** Both repos are kept in sync.
+> **This repo has moved to [pagliazi/rragent](https://github.com/pagliazi/rragent).** Both repos are kept in sync.
 
 ---
 
@@ -31,7 +31,7 @@
 ## Quick Start
 
 ```bash
-git clone https://github.com/pagliazi/rrclaw.git
+git clone https://github.com/pagliazi/rragent.git
 cd rragent
 
 # 一键部署

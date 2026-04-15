@@ -154,9 +154,9 @@ PyAgent 附属模块（`agents/`）：
 
 ```bash
 # 主机 (zayl@macOS)
-./rrclaw start all          # 启动所有 agents + rragent service
-./rrclaw deploy             # SCP 同步到 clawagent@192.168.1.x:/Users/clawagent/openclaw/
-./rrclaw status             # 查看所有组件状态
+./rragentctl start all          # 启动所有 agents + rragent service
+./rragentctl deploy             # SCP 同步到 clawagent@192.168.1.x:/Users/clawagent/openclaw/
+./rragentctl status             # 查看所有组件状态
 
 # 安装 Python 包
 pip install -e ".[full]"

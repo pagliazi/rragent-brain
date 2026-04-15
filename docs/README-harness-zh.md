@@ -29,7 +29,7 @@
 ## 快速开始
 
 ```bash
-git clone https://github.com/pagliazi/rrclaw.git
+git clone https://github.com/pagliazi/rragent.git
 cd rragent
 
 # 一键部署

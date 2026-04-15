@@ -9,7 +9,7 @@ Factor Quality Analyzer — 因子质量分析框架
 设计原则:
   - 所有规则都有明确的判定依据和阈值说明
   - 返回结构化的质量报告，供 alpha_digger/factor_library 直接使用
-  - 作为 rrclaw 挖掘流水线的核心质量关卡
+  - 作为 rragent 挖掘流水线的核心质量关卡
 
 架构位置:
   alpha_digger.py → [LLM生成代码] → factor_quality.code_audit()  → 静态拦截
@@ -555,7 +555,7 @@ def full_audit(code: str, metrics: dict) -> QualityReport:
 # ══════════════════════════════════════════════════════════════════════════════
 
 QUALITY_RULES_FOR_PROMPT = """
-█ 因子质量规范 (rrclaw 因子准入标准，违反任何致命规则 = 因子直接废弃):
+█ 因子质量规范 (rragent 因子准入标准，违反任何致命规则 = 因子直接废弃):
 
 [致命] 未来函数检测:
   F01. 禁止 shift(-N) — 向未来偏移 = 偷看明天的数据
@@ -584,7 +584,7 @@ QUALITY_RULES_FOR_PROMPT = """
   SQ04. 胜率 > 45% (门槛提升，低质因子直接淘汰)
   SQ05. 最大回撤 < 30%
 
-█ 什么是好因子 (rrclaw 高质量标准):
+█ 什么是好因子 (rragent 高质量标准):
   - 优先: 量价背离+情绪共振类因子 (多信号交叉确认，比单一技术指标更鲁棒)
   - 避免: 纯技术指标单因子 (如单独的 RSI/MACD 变体，IC 衰减快)
   - IC 衰减: 好因子在 5-20 日内仍保持 IC > 0，快速衰减 (2-3日清零) 的因子不稳定

@@ -1,7 +1,7 @@
 # ═══════════════════════════════════════════════════════
 # ReachRich Claw — Agent/Channel/Service 注册表
 # 这是系统中所有组件的唯一事实来源 (Single Source of Truth)
-# rrclaw 从此文件读取，不再硬编码列表
+# rragentctl 从此文件读取，不再硬编码列表
 #
 # run_as: 指定运行用户
 #   zayl      — 需要 GUI / Apple Events / SSH key 的特权 agent
