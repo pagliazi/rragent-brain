@@ -1,0 +1,364 @@
+{
+  "name": "rragents - 持续因子挖掘 + 智能融合 (超短线增强)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 8,  "triggerAtMinute": 0  },
+            { "triggerAtHour": 8,  "triggerAtMinute": 30 },
+            { "triggerAtHour": 9,  "triggerAtMinute": 0  },
+            { "triggerAtHour": 9,  "triggerAtMinute": 15 },
+            { "triggerAtHour": 9,  "triggerAtMinute": 25 },
+            { "triggerAtHour": 9,  "triggerAtMinute": 30 },
+            { "triggerAtHour": 9,  "triggerAtMinute": 40 },
+            { "triggerAtHour": 9,  "triggerAtMinute": 50 },
+            { "triggerAtHour": 10, "triggerAtMinute": 0  },
+            { "triggerAtHour": 10, "triggerAtMinute": 10 },
+            { "triggerAtHour": 10, "triggerAtMinute": 20 },
+            { "triggerAtHour": 10, "triggerAtMinute": 30 },
+            { "triggerAtHour": 10, "triggerAtMinute": 45 },
+            { "triggerAtHour": 11, "triggerAtMinute": 0  },
+            { "triggerAtHour": 11, "triggerAtMinute": 20 },
+            { "triggerAtHour": 11, "triggerAtMinute": 30 },
+            { "triggerAtHour": 12, "triggerAtMinute": 0  },
+            { "triggerAtHour": 12, "triggerAtMinute": 30 },
+            { "triggerAtHour": 13, "triggerAtMinute": 0  },
+            { "triggerAtHour": 13, "triggerAtMinute": 10 },
+            { "triggerAtHour": 13, "triggerAtMinute": 20 },
+            { "triggerAtHour": 13, "triggerAtMinute": 35 },
+            { "triggerAtHour": 13, "triggerAtMinute": 50 },
+            { "triggerAtHour": 14, "triggerAtMinute": 10 },
+            { "triggerAtHour": 14, "triggerAtMinute": 25 },
+            { "triggerAtHour": 14, "triggerAtMinute": 40 },
+            { "triggerAtHour": 14, "triggerAtMinute": 55 },
+            { "triggerAtHour": 15, "triggerAtMinute": 0  },
+            { "triggerAtHour": 15, "triggerAtMinute": 15 },
+            { "triggerAtHour": 15, "triggerAtMinute": 30 },
+            { "triggerAtHour": 20, "triggerAtMinute": 0  },
+            { "triggerAtHour": 21, "triggerAtMinute": 30 },
+            { "triggerAtHour": 23, "triggerAtMinute": 30 }
+          ]
+        }
+      },
+      "id": "schedule-1",
+      "name": "定时触发 33次/天",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ 220, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/mine",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token",  "value": "openclaw-n8n-2026" },
+            { "name": "Content-Type", "value": "application/json"  }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const h = $now.hour; const m = $now.minute; const isPreOpen   = (h === 9  && m <= 25); const isOpen      = (h === 9  && m >= 30 && m < 55); const isMorningHot= (h === 9  && m >= 50) || (h === 10 && m <= 30); const isMorning   = (h >= 10 && m > 30 && h < 11); const isLunch     = (h === 11 && m >= 30) || (h === 12); const isAfternoonOpen = (h === 13 && m < 40); const isAfternoon = (h >= 13 && h < 15); const isClose     = (h === 15); const isEvening   = (h >= 20); const session = isPreOpen ? 'pre_open' : isOpen ? 'open_auction' : isMorningHot ? 'morning_hot' : isMorning ? 'morning_session' : isLunch ? 'lunch_break' : isAfternoonOpen ? 'afternoon_open' : isAfternoon ? 'afternoon_session' : isClose ? 'closing' : isEvening ? 'evening_review' : 'overnight'; const isHotPeriod = isOpen || isMorningHot || isAfternoonOpen; const rounds = isHotPeriod ? 3 : isEvening ? 5 : 2; const fpr = isHotPeriod ? 5 : isEvening ? 5 : 5; return JSON.stringify({ rounds, factors_per_round: fpr, timeframes: ['10s', '15s', '30s', '1min', '2min', '3min', '5min'], focus: 'ultra_short', intraday_only: true, session_tag: session, ultra_short_weight: 2.5 }); })() }}"
+      },
+      "id": "ultra-short-mine",
+      "name": "0. 超短线因子挖掘 (10s-5min)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 440, 300 ]
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "minutes"
+      },
+      "id": "wait-ultra-short",
+      "name": "等待超短线挖掘",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [ 660, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/mine",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token",  "value": "openclaw-n8n-2026" },
+            { "name": "Content-Type", "value": "application/json"  }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $now.hour >= 20 ? '{\"rounds\": 3, \"factors_per_round\": 5, \"timeframes\": [\"5min\",\"15min\",\"30min\",\"60min\"], \"focus\": \"short_term\"}' : '{\"rounds\": 2, \"factors_per_round\": 5, \"timeframes\": [\"5min\",\"15min\",\"30min\"], \"focus\": \"short_term\"}' }}"
+      },
+      "id": "mine-trigger",
+      "name": "1. 启动因子挖掘 (短线补充)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 880, 300 ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $now.hour >= 20 ? 12 : 6 }}",
+        "unit": "minutes"
+      },
+      "id": "wait-mine",
+      "name": "等待挖掘完成",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [ 1100, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/pipeline/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token", "value": "openclaw-n8n-2026" }
+          ]
+        }
+      },
+      "id": "check-status",
+      "name": "2. 查询管线状态",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1320, 300 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-factors",
+              "leftValue": "={{ $json.factor_stats.active_count }}",
+              "rightValue": 3,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-enough",
+      "name": "因子数 >= 3?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 1540, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/combine-smart",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token",  "value": "openclaw-n8n-2026" },
+            { "name": "Content-Type", "value": "application/json"  }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"max_combos\": 80, \"prefer_timeframes\": [\"10s\",\"15s\",\"30s\",\"1min\",\"2min\",\"3min\",\"5min\"], \"ultra_short_boost\": true, \"ultra_short_weight\": 2.5, \"min_sharpe_threshold\": 0.5}"
+      },
+      "id": "smart-combine",
+      "name": "3a. 智能择优融合 (超短线优先)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1760, 200 ]
+    },
+    {
+      "parameters": {
+        "amount": 3,
+        "unit": "minutes"
+      },
+      "id": "wait-smart",
+      "name": "等待智能融合",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [ 1980, 200 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/combine-all",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token",  "value": "openclaw-n8n-2026" },
+            { "name": "Content-Type", "value": "application/json"  }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"group_size\": 2, \"max_combos\": 100, \"filter_timeframes\": [\"10s\",\"15s\",\"30s\",\"1min\",\"2min\",\"3min\",\"5min\",\"15min\"], \"ultra_short_priority\": true}"
+      },
+      "id": "exhaustive-combine",
+      "name": "3b. 穷举补充融合",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 2200, 200 ]
+    },
+    {
+      "parameters": {
+        "amount": 4,
+        "unit": "minutes"
+      },
+      "id": "wait-exhaust",
+      "name": "等待穷举融合",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [ 2420, 200 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/auto-promote",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token",  "value": "openclaw-n8n-2026" },
+            { "name": "Content-Type", "value": "application/json"  }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"min_sharpe\": 0.65, \"max_per_run\": 10, \"prefer_ultra_short\": true, \"ultra_short_min_sharpe\": 0.5}"
+      },
+      "id": "auto-promote",
+      "name": "3c. 自动策略化",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 2640, 200 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/pipeline/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token", "value": "openclaw-n8n-2026" }
+          ]
+        }
+      },
+      "id": "final-status",
+      "name": "4. 最终状态",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 2860, 300 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const status = $input.first().json;\nconst stats = status.factor_stats || {};\nconst events = status.recent_events || [];\n\nconst ultraShortEvent = events.find(e => e.type === 'mine_session_done' && e.focus === 'ultra_short');\nconst mineEvent = events.find(e => e.type === 'mine_session_done' && e.focus === 'short_term');\nconst smartEvent = events.find(e => e.type === 'combine_smart_done');\nconst exhaustEvent = events.find(e => e.type === 'combine_all_done');\nconst promoteEvent = events.find(e => e.type === 'auto_promote_done');\n\nlet msg = `⚡ rragents 超短线因子管线报告\\n`;\nmsg += `${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}\\n`;\nmsg += `━━━━━━━━━━━━━━━━━━\\n`;\nmsg += `📦 活跃因子: ${stats.active_count || 0} 个\\n`;\nmsg += `🏆 最佳 Sharpe: ${(stats.best_sharpe || 0).toFixed(3)}\\n`;\nmsg += `📊 平均 Sharpe: ${(stats.avg_sharpe || 0).toFixed(3)}\\n`;\n\nif (ultraShortEvent?.result) {\n  const r = ultraShortEvent.result;\n  msg += `\\n⚡ 超短线(10s-5min): 生成 ${r.total_generated} → 测试 ${r.total_tested} → 入库 ${r.total_admitted}\\n`;\n  if (r.top_factors && r.top_factors.length) {\n    msg += `  最优: ${r.top_factors.slice(0,3).map(f => `${f.name}[${f.timeframe||'?'}](Sharpe=${(f.sharpe||0).toFixed(2)})`).join(', ')}\\n`;\n  }\n}\n\nif (mineEvent?.result) {\n  const r = mineEvent.result;\n  msg += `\\n⛏️ 短线补充(5-30min): 生成 ${r.total_generated} → 测试 ${r.total_tested} → 入库 ${r.total_admitted}\\n`;\n}\n\nif (smartEvent) {\n  msg += `\\n🎯 智能融合: 跨主题 ${smartEvent.smart_count || 0} + 贪心 ${smartEvent.greedy_count || 0} → 通过 ${smartEvent.accepted}\\n`;\n}\n\nif (exhaustEvent) {\n  msg += `🔮 穷举融合: 测试 ${exhaustEvent.tested} → 通过 ${exhaustEvent.accepted}\\n`;\n}\n\nif (promoteEvent && promoteEvent.promoted > 0) {\n  msg += `\\n📈 自动策略化: ${promoteEvent.promoted} 个新策略已推送\\n`;\n  (promoteEvent.strategies || []).forEach((s, i) => {\n    msg += `  ${i+1}. [${s.theme}|${s.timeframe||'?'}] Sharpe=${(s.sharpe||0).toFixed(2)} ${s.quality_grade}\\n`;\n  });\n}\n\nconst ultraShortCount = stats.ultra_short_count || 0;\nconst totalCount = stats.active_count || 1;\nmsg += `\\n📋 超短线占比: ${ultraShortCount}/${totalCount} (${Math.round(ultraShortCount/totalCount*100)}%)`;\n\nconst themes = stats.theme_distribution || {};\nconst top5 = Object.entries(themes).sort((a,b) => b[1]-a[1]).slice(0,5);\nif (top5.length) {\n  msg += `\\n主题: ${top5.map(([k,v]) => `${k}(${v})`).join(' | ')}`;\n}\n\nreturn [{json: {message: msg}}];"
+      },
+      "id": "gen-report",
+      "name": "5. 生成报告",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 3080, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{\"chat_id\":\"-1003731324560\",\"message_thread_id\":7,\"text\":' + JSON.stringify($json.message) + ',\"parse_mode\":\"HTML\"}' }}"
+      },
+      "id": "tg-send",
+      "name": "→ 发送 Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 3300, 200 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/2a2df595-8b4e-4d2d-8264-4916b928258f",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({msg_type: 'text', content: {text: $json.message}}) }}"
+      },
+      "id": "feishu-send",
+      "name": "→ 发送飞书",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 3300, 400 ]
+    }
+  ],
+  "connections": {
+    "定时触发 33次/天": {
+      "main": [[ { "node": "0. 超短线因子挖掘 (10s-5min)", "type": "main", "index": 0 } ]]
+    },
+    "0. 超短线因子挖掘 (10s-5min)": {
+      "main": [[ { "node": "等待超短线挖掘", "type": "main", "index": 0 } ]]
+    },
+    "等待超短线挖掘": {
+      "main": [[ { "node": "1. 启动因子挖掘 (短线补充)", "type": "main", "index": 0 } ]]
+    },
+    "1. 启动因子挖掘 (短线补充)": {
+      "main": [[ { "node": "等待挖掘完成", "type": "main", "index": 0 } ]]
+    },
+    "等待挖掘完成": {
+      "main": [[ { "node": "2. 查询管线状态", "type": "main", "index": 0 } ]]
+    },
+    "2. 查询管线状态": {
+      "main": [[ { "node": "因子数 >= 3?", "type": "main", "index": 0 } ]]
+    },
+    "因子数 >= 3?": {
+      "main": [
+        [ { "node": "3a. 智能择优融合 (超短线优先)", "type": "main", "index": 0 } ],
+        [ { "node": "4. 最终状态", "type": "main", "index": 0 } ]
+      ]
+    },
+    "3a. 智能择优融合 (超短线优先)": {
+      "main": [[ { "node": "等待智能融合", "type": "main", "index": 0 } ]]
+    },
+    "等待智能融合": {
+      "main": [[ { "node": "3b. 穷举补充融合", "type": "main", "index": 0 } ]]
+    },
+    "3b. 穷举补充融合": {
+      "main": [[ { "node": "等待穷举融合", "type": "main", "index": 0 } ]]
+    },
+    "等待穷举融合": {
+      "main": [[ { "node": "3c. 自动策略化", "type": "main", "index": 0 } ]]
+    },
+    "3c. 自动策略化": {
+      "main": [[ { "node": "4. 最终状态", "type": "main", "index": 0 } ]]
+    },
+    "4. 最终状态": {
+      "main": [[ { "node": "5. 生成报告", "type": "main", "index": 0 } ]]
+    },
+    "5. 生成报告": {
+      "main": [[
+        { "node": "→ 发送 Telegram", "type": "main", "index": 0 },
+        { "node": "→ 发送飞书",      "type": "main", "index": 0 }
+      ]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

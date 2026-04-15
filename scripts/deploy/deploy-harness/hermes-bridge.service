@@ -1,0 +1,20 @@
+[Unit]
+Description=Hermes-OpenClaw Bridge Server
+After=redis.service network.target
+Wants=redis.service
+
+[Service]
+Type=simple
+User=clawagent
+WorkingDirectory=/opt/hermes-openclaw-bridge
+Environment=REDIS_URL=redis://127.0.0.1:6379/0
+Environment=GATEWAY_URL=ws://127.0.0.1:18789
+Environment=HERMES_AGENT_PATH=/opt/hermes-agent
+ExecStart=/opt/hermes-openclaw-bridge/.venv/bin/python -m bridge.server --config bridge.yaml
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

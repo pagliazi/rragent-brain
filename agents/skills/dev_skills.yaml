@@ -1,0 +1,167 @@
+agent: dev
+version: "2.0"
+description: "智能代码开发 Agent — Claude Code CLI + SSH + AI 辅助"
+requires_llm: true
+llm_preference: "claude-sonnet"
+target_host: "192.168.1.138"
+
+skills:
+  - name: claude_code
+    description: "调用 Claude Code CLI 执行完整的 AI 编程任务（读写文件、搜索代码、执行命令）"
+    params:
+      prompt: { type: string, required: true, desc: "开发任务描述（自然语言）" }
+      model: { type: string, default: "sonnet", desc: "模型: sonnet / opus / haiku" }
+      work_dir: { type: string, required: false, desc: "工作目录" }
+      max_budget: { type: float, required: false, desc: "最大花费 USD" }
+      allowed_tools: { type: string, required: false, desc: "允许的工具列表" }
+      timeout: { type: int, default: 300, desc: "超时秒数" }
+    returns:
+      output: "Claude Code 执行结果"
+      model: "使用的模型"
+      cost_usd: "API 花费"
+      duration_s: "执行时长"
+      success: "是否成功"
+      session_id: "会话 ID（可用于 --resume 继续）"
+    examples:
+      - "/claude 帮我在 orchestrator.py 里添加一个新的 L0 路由"
+      - "/claude --model opus 重构 dev_agent.py 的错误处理逻辑"
+      - "/claude --dir /Users/zayl/OpenClaw-Universe 搜索所有 TODO 注释并生成修复清单"
+      - "/cc 给 UserTable 组件添加排序功能"
+
+  - name: code_review
+    description: "AI 代码审查 — 安全性、性能、代码质量、风格一体化审查"
+    params:
+      path: { type: string, required: true, desc: "要审查的文件路径" }
+      focus: { type: string, required: false, desc: "审查重点" }
+    returns:
+      output: "审查报告（总评/问题列表/安全检查/改进建议）"
+    examples:
+      - "/cr agents/dev_agent.py"
+      - "/code_review src/app/admin/users/page.tsx 注意权限控制"
+
+  - name: refactor
+    description: "智能代码重构 — 保持功能不变，改进结构"
+    params:
+      path: { type: string, required: true, desc: "要重构的文件路径" }
+      description: { type: string, required: false, desc: "重构需求描述" }
+    returns:
+      output: "重构结果和变更说明"
+    examples:
+      - "/refactor agents/orchestrator.py 拆分过长的方法"
+
+  - name: fix_bug
+    description: "Bug 诊断与自动修复"
+    params:
+      description: { type: string, required: true, desc: "Bug 描述或错误日志" }
+      path: { type: string, required: false, desc: "相关文件路径" }
+      error: { type: string, required: false, desc: "错误日志" }
+    returns:
+      output: "修复结果（根因分析 + 修改内容）"
+    examples:
+      - "/fix 用户列表页面加载报 500 错误"
+      - "/fix agents/monitor_agent.py Prometheus 连接超时"
+
+  - name: gen_test
+    description: "自动生成单元测试"
+    params:
+      path: { type: string, required: true, desc: "要测试的文件路径" }
+      framework: { type: string, required: false, desc: "测试框架 (pytest/jest/vitest 等)" }
+    returns:
+      output: "生成的测试代码和运行结果"
+    examples:
+      - "/test agents/dev_agent.py"
+      - "/test src/hooks/useUserApi.ts vitest"
+
+  - name: explain
+    description: "深度代码解释 — 功能概述、逻辑流程、依赖关系"
+    params:
+      path: { type: string, required: true, desc: "文件或代码路径" }
+    returns:
+      output: "代码解释（功能/流程/数据结构/依赖/改进点）"
+    examples:
+      - "/explain agents/orchestrator.py"
+
+  - name: ssh_exec
+    description: "在远程 VM 上执行 shell 命令"
+    params:
+      command: { type: string, required: true, desc: "要执行的 shell 命令" }
+    returns:
+      exit_code: "命令退出码"
+      output: "标准输出+错误输出"
+    examples:
+      - "/ssh ls -la /root/"
+      - "/ssh systemctl status nginx"
+
+  - name: local_exec
+    description: "在本地执行安全命令（白名单限制）"
+    params:
+      command: { type: string, required: true, desc: "要执行的命令" }
+    returns:
+      exit_code: "退出码"
+      output: "命令输出"
+    examples:
+      - "/local git status"
+      - "/local ls -la src/"
+
+  - name: read_file
+    description: "读取远程 VM 文件内容"
+    params:
+      path: { type: string, required: true, desc: "文件绝对路径" }
+    returns:
+      content: "文件内容"
+
+  - name: write_file
+    description: "写入远程 VM 文件"
+    params:
+      path: { type: string, required: true, desc: "文件绝对路径" }
+      content: { type: string, required: true, desc: "文件内容" }
+
+  - name: ai_dev
+    description: "LLM 辅助开发（Claude Code 不可用时的降级方案）"
+    params:
+      instruction: { type: string, required: true, desc: "开发指令" }
+      target_file: { type: string, required: false, desc: "目标文件" }
+      auto_execute: { type: bool, default: false, desc: "是否自动执行" }
+    returns:
+      plan: "AI 生成的命令序列"
+      executed: "是否已执行"
+
+  - name: deploy_frontend
+    description: "前端项目部署"
+    params:
+      skip_build: { type: bool, default: false, desc: "跳过构建步骤" }
+    examples:
+      - "/deploy"
+      - "/deploy skip_build"
+
+  - name: status
+    description: "开发环境状态检查"
+    returns:
+      claude_code: "Claude Code CLI 可用性"
+      ssh: "SSH 连接状态"
+      capabilities: "全部可用能力列表"
+
+safety_rules:
+  forbidden_commands:
+    - "rm -rf /"
+    - "mkfs"
+    - "dd if=/dev/zero"
+    - "shutdown"
+    - "reboot"
+  max_commands_per_plan: 10
+  command_timeout: 30
+  output_truncation: 8000
+  local_safe_commands:
+    - ls
+    - cat
+    - head
+    - tail
+    - wc
+    - find
+    - grep
+    - rg
+    - git
+    - python3
+    - node
+    - npm
+    - pnpm

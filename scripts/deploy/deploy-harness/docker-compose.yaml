@@ -1,0 +1,39 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    restart: unless-stopped
+
+  rragent:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    env_file: ../.env
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  # ── 可选：IM Gateway（接入 Telegram/飞书/WebChat 时需要）──
+  # 取消注释以启用 IM 通道
+  #
+  # rragent:
+  #   image: ghcr.io/rragent/rragent:latest
+  #   ports:
+  #     - "18789:18789"
+  #   environment:
+  #     - OPENCLAW_GATEWAY_HOST=0.0.0.0
+  #     - REDIS_URL=redis://redis:6379/0
+  #   depends_on:
+  #     - redis
+  #   restart: unless-stopped
+
+volumes:
+  redis_data:

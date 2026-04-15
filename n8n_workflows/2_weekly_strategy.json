@@ -1,0 +1,276 @@
+{
+  "name": "rragents - 每日策略推送 (4次/天)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9,
+              "triggerAtMinute": 30
+            },
+            {
+              "triggerAtHour": 13,
+              "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 22,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-promote",
+      "name": "4次/天检查推送",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/auto-promote",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8n-Token",
+              "value": "openclaw-n8n-2026"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"min_sharpe\": 1.0, \"max_per_run\": 5}"
+      },
+      "id": "auto-promote",
+      "name": "1. 检查新因子",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-new",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "promoting",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-promoting",
+      "name": "有新因子?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "minutes"
+      },
+      "id": "wait-promote",
+      "name": "等待策略化完成",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/events?limit=5",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8n-Token",
+              "value": "openclaw-n8n-2026"
+            }
+          ]
+        }
+      },
+      "id": "get-result",
+      "name": "2. 获取推送结果",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.first().json.events || [];\nconst promoteEvent = events.find(e => e.type === 'auto_promote_done' || e.type === 'promote_done');\n\nlet msg = `📈 rragents 策略推送通知 ${new Date().toLocaleString()}\\n\\n`;\n\nif (!promoteEvent) {\n  msg += '⏳ 策略推送仍在进行中...';\n} else if (promoteEvent.promoted === 0) {\n  msg += `📭 ${promoteEvent.message || '本次无新策略推送'}`;\n} else {\n  msg += `✅ 成功推送 ${promoteEvent.promoted} 个策略到 ReachRich:\\n\\n`;\n  const strats = promoteEvent.strategies || [];\n  strats.forEach((s, i) => {\n    msg += `${i+1}. [${s.theme}] Sharpe=${(s.sharpe||0).toFixed(2)} ${s.quality_grade}\\n`;\n    msg += `   策略ID: ${s.strategy_id}\\n`;\n  });\n  msg += `\\n🎯 策略已部署至 139 sandbox 并注册 screener 模板`;\n}\n\nreturn [{json: {message: msg, promoted: promoteEvent?.promoted || 0}}];"
+      },
+      "id": "gen-report",
+      "name": "3. 生成推送报告",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{\"chat_id\":\"-1003731324560\",\"message_thread_id\":5,\"text\":' + JSON.stringify($json.message) + ',\"parse_mode\":\"HTML\"}' }}"
+      },
+      "id": "tg-send",
+      "name": "→ 发送 Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/2a2df595-8b4e-4d2d-8264-4916b928258f",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({msg_type: 'text', content: {text: $json.message}}) }}"
+      },
+      "id": "feishu-send",
+      "name": "→ 发送飞书",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "4次/天检查推送": {
+      "main": [
+        [
+          {
+            "node": "1. 检查新因子",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. 检查新因子": {
+      "main": [
+        [
+          {
+            "node": "有新因子?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "有新因子?": {
+      "main": [
+        [
+          {
+            "node": "等待策略化完成",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "等待策略化完成": {
+      "main": [
+        [
+          {
+            "node": "2. 获取推送结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. 获取推送结果": {
+      "main": [
+        [
+          {
+            "node": "3. 生成推送报告",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. 生成推送报告": {
+      "main": [
+        [
+          {
+            "node": "→ 发送 Telegram",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "→ 发送飞书",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

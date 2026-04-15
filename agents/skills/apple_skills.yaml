@@ -1,0 +1,158 @@
+agent: apple
+version: "1.0"
+description: "macOS 生态管家 — 日历/提醒/备忘录/通知/Music/Shortcuts/Spotlight/系统信息"
+requires_llm: false
+platform: "macOS (Apple Silicon)"
+depends_on: ["osascript", "mdfind", "shortcuts", "terminal-notifier"]
+
+skills:
+  - name: calendar_today
+    description: "查询今天的日历事件"
+    params:
+      date: { type: string, default: "today", desc: "日期 (today/tomorrow/YYYY-MM-DD)" }
+    returns:
+      events: "日历事件列表 [{title, start, end, location, notes}]"
+    system_calls: ["osascript → Calendar.app"]
+
+  - name: calendar_create
+    description: "创建日历事件"
+    params:
+      title: { type: string, required: true, desc: "事件标题" }
+      start: { type: string, required: true, desc: "开始时间 (YYYY-MM-DD HH:MM)" }
+      end: { type: string, required: false, desc: "结束时间（默认+1小时）" }
+      location: { type: string, default: "", desc: "地点" }
+      notes: { type: string, default: "", desc: "备注" }
+      calendar_name: { type: string, default: "", desc: "日历名称（默认使用默认日历）" }
+    returns:
+      text: "创建确认信息"
+
+  - name: calendar_delete
+    description: "删除日历事件"
+    params:
+      title: { type: string, required: true, desc: "事件标题（模糊匹配）" }
+      date: { type: string, default: "today", desc: "事件日期" }
+    returns:
+      text: "删除确认信息"
+
+  - name: remind_create
+    description: "创建提醒事项"
+    params:
+      title: { type: string, required: true, desc: "提醒内容" }
+      due: { type: string, default: "", desc: "到期时间 (YYYY-MM-DD HH:MM)" }
+      list_name: { type: string, default: "", desc: "提醒列表名称（默认使用默认列表）" }
+      priority: { type: int, default: 0, desc: "优先级 0=无 1=高 5=中 9=低" }
+    returns:
+      text: "创建确认信息"
+
+  - name: remind_list
+    description: "查询未完成的提醒事项"
+    params:
+      list_name: { type: string, default: "", desc: "指定列表名称（空=全部列表）" }
+    returns:
+      reminders: "提醒事项列表 [{title, due, priority, list}]"
+
+  - name: remind_complete
+    description: "标记提醒事项为已完成"
+    params:
+      title: { type: string, required: true, desc: "提醒标题（模糊匹配）" }
+    returns:
+      text: "完成确认信息"
+
+  - name: note_create
+    description: "创建备忘录"
+    params:
+      title: { type: string, required: true, desc: "备忘录标题" }
+      body: { type: string, default: "", desc: "备忘录内容" }
+      folder: { type: string, default: "", desc: "文件夹名称（默认使用默认文件夹）" }
+    returns:
+      text: "创建确认信息"
+
+  - name: note_search
+    description: "搜索备忘录"
+    params:
+      keyword: { type: string, required: true, desc: "搜索关键词" }
+    returns:
+      notes: "匹配的备忘录列表 [{title, snippet, folder}]"
+
+  - name: contact_search
+    description: "搜索通讯录联系人"
+    params:
+      name: { type: string, required: true, desc: "联系人姓名（模糊搜索）" }
+    returns:
+      contacts: "联系人列表 [{name, phone, email, company}]"
+
+  - name: mail_send
+    description: "通过 Mail.app 起草邮件"
+    params:
+      to: { type: string, required: true, desc: "收件人邮箱" }
+      subject: { type: string, required: true, desc: "邮件主题" }
+      body: { type: string, required: true, desc: "邮件正文" }
+    returns:
+      text: "邮件发送确认"
+
+  - name: notify
+    description: "发送 macOS 系统通知"
+    params:
+      title: { type: string, required: true, desc: "通知标题" }
+      message: { type: string, default: "", desc: "通知内容" }
+      sound: { type: string, default: "default", desc: "提示音 (default/Basso/Blow/Bottle/Frog/Funk/Glass/Hero/Morse/Ping/Pop/Purr/Sosumi/Submarine/Tink)" }
+    returns:
+      text: "通知发送确认"
+
+  - name: spotlight
+    description: "Spotlight 全盘文件搜索"
+    params:
+      query: { type: string, required: true, desc: "搜索关键词" }
+      kind: { type: string, default: "", desc: "文件类型过滤 (pdf/image/document/folder/app)" }
+      limit: { type: int, default: 10, desc: "结果数量上限" }
+    returns:
+      files: "匹配的文件路径列表"
+
+  - name: music_control
+    description: "控制 Apple Music 播放"
+    params:
+      action: { type: string, required: true, desc: "操作: play/pause/next/prev/status/search" }
+      query: { type: string, default: "", desc: "搜索关键词（仅 search 时使用）" }
+    returns:
+      text: "操作结果或当前播放信息"
+
+  - name: shortcut_run
+    description: "运行 Shortcuts.app 中的快捷指令"
+    params:
+      name: { type: string, required: true, desc: "快捷指令名称" }
+      input: { type: string, default: "", desc: "传入的输入文本" }
+    returns:
+      text: "快捷指令输出"
+
+  - name: shortcut_list
+    description: "列出可用的快捷指令"
+    params: {}
+    returns:
+      shortcuts: "快捷指令名称列表"
+
+  - name: system_info
+    description: "查询系统信息（电池/磁盘/网络/版本）"
+    params:
+      category: { type: string, default: "all", desc: "类别: all/battery/disk/network/version" }
+    returns:
+      info: "系统信息字典"
+
+  - name: clipboard_read
+    description: "读取系统剪贴板内容"
+    params: {}
+    returns:
+      text: "剪贴板文本内容"
+
+  - name: clipboard_write
+    description: "写入系统剪贴板"
+    params:
+      text: { type: string, required: true, desc: "要写入的文本" }
+    returns:
+      text: "写入确认"
+
+  - name: finder_open
+    description: "在 Finder 中打开指定路径"
+    params:
+      path: { type: string, required: true, desc: "文件或文件夹路径" }
+    returns:
+      text: "打开确认"

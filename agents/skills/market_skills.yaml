@@ -1,0 +1,55 @@
+agent: market
+version: "2.0"
+description: "行情数据中心 — A股实时行情查询与聚合"
+requires_llm: false
+data_source:
+  primary: "http://192.168.1.138/api/"
+  backup: "akshare (自动降级切换)"
+  failover: "主API连续3次失败自动切换AKShare，5分钟后回切尝试"
+
+skills:
+  - name: get_limitup
+    description: "查询实时涨停板列表"
+    params:
+      page_size: { type: int, default: 20, desc: "返回条数（最大30）" }
+    returns:
+      text: "格式化的涨停板列表（含封单额、连板标注、行业）"
+      raw: "原始 API JSON 数据"
+    example_output: |
+      🔴 涨停板 (42 只)
+      1. 某某股份 (000001.SZ) 10.02% 封单:5280万 半导体 [3连板]
+
+  - name: get_limitstep
+    description: "查询连板股梯队"
+    params:
+      page_size: { type: int, default: 15, desc: "返回条数" }
+    returns:
+      text: "按连板天数排序的连板股列表"
+      raw: "原始 API JSON 数据"
+
+  - name: get_concepts
+    description: "查询概念板块涨幅排行榜"
+    params:
+      page_size: { type: int, default: 15, desc: "返回条数" }
+    returns:
+      text: "板块名称、涨幅、涨跌家数、领涨股"
+      raw: "原始 API JSON 数据"
+
+  - name: get_hot
+    description: "查询同花顺热股排行"
+    params:
+      page_size: { type: int, default: 15, desc: "返回条数" }
+    returns:
+      text: "热度排名、股票名称、涨幅、概念标签"
+      raw: "原始 API JSON 数据"
+
+  - name: get_summary
+    description: "一键获取行情精简摘要（涨停TOP10 + 板块TOP5 + 连板TOP5）"
+    params: {}
+    returns:
+      text: "多段落的行情概览文本"
+
+  - name: get_all_raw
+    description: "获取全部原始数据包（供 AnalysisAgent 使用）"
+    params: {}
+    returns: "包含 limitup/limitstep/concepts/hot 四个子字段的原始 JSON"

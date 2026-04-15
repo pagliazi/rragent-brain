@@ -1,0 +1,927 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════
+# rrclaw — ReachRich Claw Multi-Agent 运维管理工具
+# 从 registry.yaml 读取所有组件，零硬编码
+# ═══════════════════════════════════════════════════
+
+set -e
+
+# 确保 Homebrew 工具（redis-cli 等）在 PATH 中，兼容 clawagent 用户
+export PATH="/opt/homebrew/bin:/opt/homebrew/sbin:$PATH"
+
+_SELF="$0"
+[ -L "$_SELF" ] && _SELF="$(readlink -f "$_SELF" 2>/dev/null || readlink "$_SELF")"
+SCRIPT_DIR="$(cd "$(dirname "$_SELF")" && pwd)"
+REGISTRY="${SCRIPT_DIR}/registry.yaml"
+VENV="${SCRIPT_DIR}/.venv"
+PYTHON="${VENV}/bin/python3"
+LOGS_DIR="${SCRIPT_DIR}/logs"
+PIDS_DIR="${SCRIPT_DIR}/.pids"
+LA_DIR="$HOME/Library/LaunchAgents"
+
+CLAW_USER="clawagent"
+CLAW_HOME="/Users/${CLAW_USER}"
+CLAW_DIR="${CLAW_HOME}/openclaw"
+CLAW_VENV="${CLAW_DIR}/.venv"
+CLAW_PYTHON="${CLAW_VENV}/bin/python3"
+CLAW_LOGS="${CLAW_HOME}/logs"
+CLAW_LA_DIR="${CLAW_HOME}/Library/LaunchAgents"
+CURRENT_USER="$(whoami)"
+# zayl 用户的源码目录和 PID 路径（供 clawagent 检查 zayl agent 状态时使用）
+ZAYL_HOME="/Users/zayl"
+ZAYL_SRC="${ZAYL_HOME}/OpenClaw-Universe/openclaw-brain"
+ZAYL_PIDS="${ZAYL_SRC}/.pids"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+mkdir -p "${LOGS_DIR}" "${PIDS_DIR}"
+
+# ── registry.yaml 解析 ────────────────────────────
+# 用 python3 解析 YAML，返回 TSV: name\ttype\tmodule_or_script\tenv_file\tlabel\tautostart\trun_as
+_parse_registry() {
+    ${PYTHON} -c "
+import yaml, sys
+with open('${REGISTRY}') as f:
+    reg = yaml.safe_load(f)
+for name, cfg in reg.get('agents', {}).items():
+    label = cfg.get('label', name)
+    auto = 'true' if cfg.get('autostart', True) else 'false'
+    run_as = cfg.get('run_as', 'clawagent')
+    print(f'{name}\tagent\t{cfg[\"module\"]}\t-\t{label}\t{auto}\t{run_as}')
+for name, cfg in reg.get('channels', {}).items():
+    label = cfg.get('label', name)
+    env = cfg.get('env_file', '-')
+    auto = 'true' if cfg.get('autostart', True) else 'false'
+    run_as = cfg.get('run_as', 'clawagent')
+    print(f'{name}\tchannel\t{cfg[\"script\"]}\t{env}\t{label}\t{auto}\t{run_as}')
+for name, cfg in reg.get('services', {}).items():
+    label = cfg.get('label', name)
+    env = cfg.get('env_file', '-')
+    auto = 'true' if cfg.get('autostart', True) else 'false'
+    run_as = cfg.get('run_as', 'clawagent')
+    print(f'{name}\tservice\t{cfg[\"script\"]}\t{env}\t{label}\t{auto}\t{run_as}')
+" 2>/dev/null
+}
+
+_get_names() {
+    _parse_registry | cut -f1
+}
+
+_get_entry() {
+    _parse_registry | awk -F'\t' -v n="$1" '$1==n{print; exit}'
+}
+
+_get_pid() {
+    local name="$1"
+    local run_as="${2:-}"
+    # 先检查当前用户的 PID 文件
+    local pidfile="${PIDS_DIR}/${name}.pid"
+    if [ -f "$pidfile" ]; then
+        local p=$(cat "$pidfile")
+        if kill -0 "$p" 2>/dev/null; then
+            echo "$p"
+            return
+        fi
+    fi
+    # 如果 run_as=zayl 且当前不是 zayl，检查 zayl 源码目录的 PID 文件
+    if [ "${run_as}" = "zayl" ] && [ "$CURRENT_USER" != "zayl" ]; then
+        local zayl_pidfile="${ZAYL_PIDS}/${name}.pid"
+        if [ -f "$zayl_pidfile" ]; then
+            local p=$(cat "$zayl_pidfile")
+            if kill -0 "$p" 2>/dev/null; then
+                echo "$p"
+                return
+            fi
+        fi
+        # fallback: pgrep by module name as zayl user
+        local p=$(pgrep -u zayl -f "agents.${name}_agent" 2>/dev/null | head -1)
+        if [ -n "$p" ]; then
+            echo "$p"
+            return
+        fi
+    fi
+    echo ""
+}
+
+# ── start: 启动组件 ──────────────────────────────
+_start_one() {
+    local name="$1"
+    local entry=$(_get_entry "$name")
+    if [ -z "$entry" ]; then
+        echo -e "  ${RED}✗${NC} ${name} (未在 registry.yaml 中找到)"
+        return 1
+    fi
+
+    local type=$(echo "$entry" | cut -f2)
+    local target=$(echo "$entry" | cut -f3)
+    local env_file=$(echo "$entry" | cut -f4)
+    local label=$(echo "$entry" | cut -f5)
+    local run_as=$(echo "$entry" | cut -f7)
+    : ${run_as:=clawagent}
+
+    local existing=$(_get_pid "$name" "$run_as")
+    if [ -z "$existing" ] && [ "$run_as" = "clawagent" ]; then
+        existing=$(pgrep -u ${CLAW_USER} -f "${target}" 2>/dev/null | head -1)
+    fi
+    if [ -n "$existing" ]; then
+        echo -e "  ${YELLOW}⚠${NC} ${name} 已在运行 (pid: ${existing})"
+        return 0
+    fi
+
+    if [ "$run_as" = "clawagent" ] && [ "$CURRENT_USER" != "clawagent" ]; then
+        _start_as_clawagent "$name" "$type" "$target" "$env_file" "$label"
+    else
+        _start_local "$name" "$type" "$target" "$env_file"
+    fi
+}
+
+_start_local() {
+    local name="$1" type="$2" target="$3" env_file="$4"
+    local logfile="${LOGS_DIR}/${name}.log"
+    local errfile="${LOGS_DIR}/${name}.err"
+
+    if [ -n "$env_file" ] && [ "$env_file" != "-" ] && [ -f "${SCRIPT_DIR}/${env_file}" ]; then
+        set -a
+        source "${SCRIPT_DIR}/${env_file}"
+        set +a
+    fi
+    export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
+
+    if [ "$type" = "agent" ]; then
+        ${PYTHON} -m ${target} >> "${logfile}" 2>> "${errfile}" &
+    else
+        ${PYTHON} "${SCRIPT_DIR}/${target}" >> "${logfile}" 2>> "${errfile}" &
+    fi
+
+    local pid=$!
+    echo "$pid" > "${PIDS_DIR}/${name}.pid"
+    echo -e "  ${GREEN}✓${NC} ${name} (pid: ${pid})"
+}
+
+_start_as_clawagent() {
+    local name="$1" type="$2" target="$3" env_file="$4" label="$5"
+
+    if [ ! -d "${CLAW_DIR}" ]; then
+        echo -e "  ${RED}✗${NC} ${name}: ${CLAW_DIR} 不存在，先执行 rrclaw deploy"
+        return 1
+    fi
+
+    local logfile="${CLAW_LOGS}/${name}.log"
+    local errfile="${CLAW_LOGS}/${name}.err"
+    local plist_label="com.openclaw.${label:-$name}"
+    local plist_file="${CLAW_LA_DIR}/${plist_label}.plist"
+    local claw_uid=$(id -u ${CLAW_USER} 2>/dev/null || echo "503")
+
+    # 方式 1: launchctl (优先，最可靠)
+    if [ -f "$plist_file" ]; then
+        sudo launchctl bootout "gui/${claw_uid}/${plist_label}" 2>/dev/null || true
+        sleep 0.5
+        sudo launchctl bootstrap "gui/${claw_uid}" "$plist_file" 2>/dev/null && {
+            sleep 1
+            local pid=$(pgrep -u ${CLAW_USER} -f "${target}" 2>/dev/null | head -1)
+            if [ -n "$pid" ]; then
+                echo "$pid" > "${PIDS_DIR}/${name}.pid"
+                echo -e "  ${GREEN}✓${NC} ${name} (launchd pid: ${pid}, user: ${CLAW_USER})"
+                return 0
+            fi
+        }
+    fi
+
+    # 方式 2: sudo su - clawagent (fallback)
+    local env_source=""
+    if [ -n "$env_file" ] && [ "$env_file" != "-" ] && [ -f "${CLAW_DIR}/${env_file}" ]; then
+        env_source="set -a; . ${CLAW_DIR}/${env_file} 2>/dev/null; set +a; "
+    fi
+
+    local py_cmd=""
+    if [ "$type" = "agent" ]; then
+        py_cmd="PYTHONPATH=${CLAW_DIR} ${CLAW_PYTHON} -m ${target}"
+    else
+        py_cmd="PYTHONPATH=${CLAW_DIR} ${CLAW_PYTHON} ${CLAW_DIR}/${target}"
+    fi
+
+    sudo su - ${CLAW_USER} -c "cd ${CLAW_DIR} && ${env_source}${py_cmd} >> ${logfile} 2>> ${errfile} & echo \$!" > /tmp/.openclaw_pid_${name} 2>/dev/null
+    sleep 1
+    local pid=$(cat /tmp/.openclaw_pid_${name} 2>/dev/null | tail -1 | tr -d '[:space:]')
+    rm -f /tmp/.openclaw_pid_${name} 2>/dev/null
+
+    if [ -n "$pid" ] && sudo kill -0 "$pid" 2>/dev/null; then
+        echo "$pid" > "${PIDS_DIR}/${name}.pid"
+        echo -e "  ${GREEN}✓${NC} ${name} (pid: ${pid}, user: ${CLAW_USER})"
+    else
+        echo -e "  ${RED}✗${NC} ${name} 启动失败，检查 ${logfile}"
+    fi
+}
+
+cmd_start() {
+    local target="${1:-all}"
+    if [ "$target" = "all" ]; then
+        echo -e "${CYAN}启动全部组件 (服务运行在 ${CLAW_USER} 下)...${NC}"
+        echo ""
+        if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+            echo -e "${RED}Redis 未运行! 先执行: brew services start redis${NC}"
+            exit 1
+        fi
+        echo -e "  ${GREEN}✓${NC} Redis OK"
+        echo ""
+        while IFS=$'\t' read -r name type target env label auto run_as; do
+            if [ "$auto" = "true" ]; then
+                _start_one "$name"
+            fi
+        done < <(_parse_registry)
+        echo ""
+        echo -e "${GREEN}全部启动完成${NC}"
+    else
+        _start_one "$target"
+    fi
+}
+
+# ── stop: 停止组件 ────────────────────────────────
+_stop_one() {
+    local name="$1"
+    local entry=$(_get_entry "$name")
+    local run_as=$(echo "$entry" | cut -f7)
+    local label=$(echo "$entry" | cut -f5)
+    : ${run_as:=clawagent}
+
+    local plist_label="com.openclaw.${label:-$name}"
+    local stopped=false
+
+    # 方式 1: launchctl bootout (优先，与 start 的 bootstrap 配对)
+    if [ "$run_as" = "clawagent" ] && [ "$CURRENT_USER" != "clawagent" ]; then
+        local claw_uid=$(id -u ${CLAW_USER} 2>/dev/null || echo "503")
+        if sudo launchctl bootout "gui/${claw_uid}/${plist_label}" 2>/dev/null; then
+            stopped=true
+            echo -e "  ${GREEN}✓${NC} ${name} 已停止 (launchctl bootout, user: ${CLAW_USER})"
+        fi
+    elif [ "$run_as" = "zayl" ] || [ "$CURRENT_USER" = "$run_as" ]; then
+        if launchctl bootout "gui/$(id -u)/${plist_label}" 2>/dev/null; then
+            stopped=true
+            echo -e "  ${GREEN}✓${NC} ${name} 已停止 (launchctl bootout)"
+        fi
+    fi
+
+    # 方式 2: kill fallback (bootout 失败或无 plist)
+    if [ "$stopped" = "false" ]; then
+        local pid=$(_get_pid "$name" "$run_as")
+        if [ -z "$pid" ] && [ "$run_as" = "clawagent" ]; then
+            local target=$(echo "$entry" | cut -f3)
+            pid=$(pgrep -u ${CLAW_USER} -f "${target}" 2>/dev/null | head -1)
+        fi
+
+        if [ -n "$pid" ]; then
+            if [ "$run_as" = "clawagent" ] && [ "$CURRENT_USER" != "clawagent" ]; then
+                sudo kill "$pid" 2>/dev/null || kill "$pid" 2>/dev/null
+                sleep 0.5
+                sudo kill -9 "$pid" 2>/dev/null || true
+            else
+                kill "$pid" 2>/dev/null
+                sleep 0.5
+                kill -9 "$pid" 2>/dev/null || true
+            fi
+            echo -e "  ${GREEN}✓${NC} ${name} 已停止 (pid: ${pid})"
+        else
+            echo -e "  ${DIM}  ${name} (未运行)${NC}"
+        fi
+    fi
+
+    rm -f "${PIDS_DIR}/${name}.pid"
+}
+
+cmd_stop() {
+    local target="${1:-all}"
+    if [ "$target" = "all" ]; then
+        echo -e "${CYAN}停止全部组件...${NC}"
+        for name in $(_get_names); do
+            _stop_one "$name"
+        done
+    else
+        _stop_one "$target"
+    fi
+}
+
+# ── restart: 重启组件 ─────────────────────────────
+cmd_restart() {
+    local target="${1:-all}"
+    if [ "$target" = "all" ]; then
+        echo -e "${CYAN}重启全部组件 (服务运行在 ${CLAW_USER} 下)...${NC}"
+        for name in $(_get_names); do
+            _stop_one "$name"
+        done
+        sleep 1
+        echo ""
+        if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+            echo -e "${RED}Redis 未运行! 先执行: brew services start redis${NC}"
+            exit 1
+        fi
+        echo -e "  ${GREEN}✓${NC} Redis OK"
+        echo ""
+        while IFS=$'\t' read -r name type target env label auto run_as; do
+            if [ "$auto" = "true" ]; then
+                _start_one "$name"
+            fi
+        done < <(_parse_registry)
+        echo ""
+        echo -e "${GREEN}全部重启完成${NC}"
+    else
+        echo -e "${CYAN}重启 ${target}...${NC}"
+        _stop_one "$target"
+        sleep 1
+        _start_one "$target"
+    fi
+}
+
+# ── status: 查看状态 ──────────────────────────────
+cmd_status() {
+    echo ""
+    echo -e "${BOLD}ReachRich Claw — 服务状态${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf "  %-18s %-8s %-10s %-8s %-8s %s\n" "NAME" "TYPE" "RUN_AS" "STATUS" "PID" "INFO"
+    echo "─────────────────────────────────────────────────────────────────────"
+
+    while IFS=$'\t' read -r name type target env label auto run_as; do
+        : ${run_as:=clawagent}
+        local pid=$(_get_pid "$name" "$run_as")
+        if [ -z "$pid" ] && [ "$run_as" = "clawagent" ]; then
+            pid=$(pgrep -u ${CLAW_USER} -f "${target}" 2>/dev/null | head -1)
+        fi
+        if [ -n "$pid" ]; then
+            local mem=$(ps -p ${pid} -o rss= 2>/dev/null | awk '{printf "%.0fMB", $1/1024}')
+            local cpu=$(ps -p ${pid} -o %cpu= 2>/dev/null | awk '{printf "%.1f%%", $1}')
+            printf "  %-18s %-8s %-10s ${GREEN}%-8s${NC} %-8s ${DIM}mem:%-6s cpu:%s${NC}\n" "${name}" "${type}" "${run_as}" "运行中" "${pid}" "${mem}" "${cpu}"
+        else
+            printf "  %-18s %-8s %-10s ${RED}%-8s${NC} %-8s\n" "${name}" "${type}" "${run_as}" "已停止" "-"
+        fi
+    done < <(_parse_registry)
+
+    echo "──────────────────────────────────────────────────────────────"
+    if redis-cli ping 2>/dev/null | grep -q PONG; then
+        local redis_pid=$(pgrep -x redis-server 2>/dev/null || echo "?")
+        local redis_mem=$(redis-cli info memory 2>/dev/null | grep "used_memory_human" | cut -d: -f2 | tr -d '\r')
+        printf "  %-20s %-8s ${GREEN}%-8s${NC} %-8s ${DIM}mem:%s${NC}\n" "redis" "infra" "运行中" "${redis_pid}" "${redis_mem}"
+    else
+        printf "  %-20s %-8s ${RED}%-8s${NC} %-8s\n" "redis" "infra" "未运行" "-"
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# ── heartbeat: Redis 心跳 ─────────────────────────
+cmd_heartbeat() {
+    if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+        echo -e "${RED}Redis 未运行${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BOLD}Agent 心跳状态 (Redis)${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local keys=$(redis-cli hkeys openclaw:heartbeats 2>/dev/null)
+    if [ -z "$keys" ]; then
+        echo "  (无心跳数据)"
+    else
+        local now=$(date +%s)
+        for key in $keys; do
+            local val=$(redis-cli hget openclaw:heartbeats "$key" 2>/dev/null)
+            local ts=$(echo "$val" | ${PYTHON} -c "import sys,json; print(int(json.load(sys.stdin).get('ts',0)))" 2>/dev/null || echo 0)
+            local pid=$(echo "$val" | ${PYTHON} -c "import sys,json; print(json.load(sys.stdin).get('pid','?'))" 2>/dev/null || echo "?")
+            local age=$((now - ts))
+
+            if [ "$age" -lt 30 ]; then
+                local status="${GREEN}在线${NC}"
+            elif [ "$age" -lt 120 ]; then
+                local status="${YELLOW}延迟 ${age}s${NC}"
+            else
+                local status="${RED}离线 ${age}s${NC}"
+            fi
+
+            printf "  %-16s %b  pid:%-6s\n" "${key}" "${status}" "${pid}"
+        done
+    fi
+
+    echo ""
+    local ch_keys=$(redis-cli hkeys openclaw:channel_heartbeats 2>/dev/null)
+    if [ -n "$ch_keys" ]; then
+        echo -e "  ${BOLD}通道:${NC}"
+        for key in $ch_keys; do
+            local val=$(redis-cli hget openclaw:channel_heartbeats "$key" 2>/dev/null)
+            local ts=$(echo "$val" | ${PYTHON} -c "import sys,json; print(int(json.load(sys.stdin).get('ts',0)))" 2>/dev/null || echo 0)
+            local now=$(date +%s)
+            local age=$((now - ts))
+            if [ "$age" -lt 30 ]; then
+                printf "  %-16s ${GREEN}在线${NC}\n" "${key}"
+            else
+                printf "  %-16s ${RED}离线 ${age}s${NC}\n" "${key}"
+            fi
+        done
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# ── dev: 前台运行单个组件 ─────────────────────────
+cmd_dev() {
+    local name="${1}"
+    if [ -z "$name" ]; then
+        echo -e "${RED}用法: rrclaw dev <component>${NC}"
+        echo "可选: $(_get_names | tr '\n' ' ')"
+        return 1
+    fi
+
+    local entry=$(_get_entry "$name")
+    if [ -z "$entry" ]; then
+        echo -e "${RED}未在 registry.yaml 中找到: ${name}${NC}"
+        return 1
+    fi
+
+    local type=$(echo "$entry" | cut -f2)
+    local target=$(echo "$entry" | cut -f3)
+    local env_file=$(echo "$entry" | cut -f4)
+
+    if [ -n "$env_file" ] && [ "$env_file" != "-" ] && [ -f "${SCRIPT_DIR}/${env_file}" ]; then
+        set -a
+        source "${SCRIPT_DIR}/${env_file}"
+        set +a
+    fi
+    export PYTHONPATH="${SCRIPT_DIR}:${PYTHONPATH}"
+
+    echo -e "${CYAN}前台运行 ${name} (Ctrl+C 退出)${NC}"
+    echo -e "${DIM}type=${type} target=${target}${NC}"
+    echo "────────────────────────────────────────"
+
+    if [ "$type" = "agent" ]; then
+        exec ${PYTHON} -m ${target}
+    else
+        exec ${PYTHON} "${SCRIPT_DIR}/${target}"
+    fi
+}
+
+# ── logs / follow ─────────────────────────────────
+cmd_logs() {
+    local name="${1:-orchestrator}"
+    local lines="${2:-50}"
+    local logfile="${LOGS_DIR}/${name}.log"
+    local errfile="${LOGS_DIR}/${name}.err"
+
+    if [ ! -f "$logfile" ] && [ ! -f "$errfile" ]; then
+        echo -e "${RED}日志不存在: ${logfile}${NC}"
+        echo "可用: $(ls ${LOGS_DIR}/*.log 2>/dev/null | xargs -I{} basename {} .log | tr '\n' ' ')"
+        return 1
+    fi
+
+    echo -e "${BOLD}=== ${name} stdout (最近 ${lines} 行) ===${NC}"
+    tail -n ${lines} "${logfile}" 2>/dev/null || echo "(空)"
+    echo ""
+    echo -e "${BOLD}=== ${name} stderr (最近 20 行) ===${NC}"
+    tail -n 20 "${errfile}" 2>/dev/null || echo "(空)"
+}
+
+cmd_follow() {
+    local name="${1:-orchestrator}"
+    echo -e "${CYAN}实时跟踪 ${name} 日志 (Ctrl+C 退出)${NC}"
+    tail -f "${LOGS_DIR}/${name}.log" "${LOGS_DIR}/${name}.err" 2>/dev/null
+}
+
+# ── redis ─────────────────────────────────────────
+cmd_redis() {
+    local action="${1:-status}"
+    case "$action" in
+        status)
+            if redis-cli ping 2>/dev/null | grep -q PONG; then
+                echo -e "${GREEN}Redis 运行中${NC}"
+                redis-cli info server 2>/dev/null | grep -E "redis_version|uptime_in_seconds|connected_clients"
+                echo "---"
+                redis-cli info memory 2>/dev/null | grep -E "used_memory_human|used_memory_peak_human"
+                echo "---"
+                echo "OpenClaw keys:"
+                redis-cli keys "openclaw:*" 2>/dev/null
+            else
+                echo -e "${RED}Redis 未运行${NC}"
+            fi
+            ;;
+        start)  brew services start redis ;;
+        stop)   brew services stop redis ;;
+        flush)
+            echo -e "${YELLOW}清除所有 OpenClaw Redis 数据...${NC}"
+            redis-cli keys "openclaw:*" 2>/dev/null | xargs -I{} redis-cli del {} 2>/dev/null
+            echo -e "${GREEN}✓ 已清除${NC}"
+            ;;
+        monitor)
+            echo -e "${CYAN}Redis 实时消息监控 (Ctrl+C 退出)${NC}"
+            redis-cli monitor 2>/dev/null | grep --line-buffered "openclaw"
+            ;;
+        *)
+            echo "用法: rrclaw redis {status|start|stop|flush|monitor}"
+            ;;
+    esac
+}
+
+# ── test ──────────────────────────────────────────
+cmd_test() {
+    local agent="${1:-market}"
+    local action="${2:-get_summary}"
+    local default_params='{}'
+    local params="${3:-$default_params}"
+
+    if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+        echo -e "${RED}Redis 未运行${NC}"
+        return 1
+    fi
+
+    echo -e "${CYAN}测试 ${agent}.${action}...${NC}"
+
+    _TEST_AGENT="${agent}" _TEST_ACTION="${action}" _TEST_PARAMS="${params}" ${PYTHON} << 'PYEOF'
+import asyncio, json, time, uuid, sys, os
+import redis.asyncio as aioredis
+
+AGENT = os.environ.get("_TEST_AGENT", "market")
+ACTION = os.environ.get("_TEST_ACTION", "get_summary")
+PARAMS_RAW = os.environ.get("_TEST_PARAMS", "{}")
+
+async def main():
+    r = aioredis.from_url("redis://127.0.0.1:6379/0")
+    pubsub = r.pubsub()
+    reply_ch = "openclaw:rrclaw_test"
+    await pubsub.subscribe(reply_ch)
+
+    msg_id = uuid.uuid4().hex[:12]
+    try:
+        params = json.loads(PARAMS_RAW)
+    except Exception:
+        params = {}
+
+    msg = json.dumps({
+        "id": msg_id, "sender": "rrclaw_test", "target": AGENT,
+        "action": ACTION, "params": params, "timestamp": time.time()
+    })
+    await r.publish(f"openclaw:{AGENT}", msg)
+
+    try:
+        async def wait_reply():
+            async for raw in pubsub.listen():
+                if raw["type"] != "message":
+                    continue
+                data = json.loads(raw["data"])
+                result = data.get("result")
+                # 跳过进度消息，等待最终结果
+                if isinstance(result, dict) and result.get("_progress"):
+                    prog = result.get("text", "")
+                    if prog:
+                        print(prog)
+                    continue
+                if data.get("error"):
+                    print(f"\033[0;31m❌ 错误: {data['error']}\033[0m")
+                elif result:
+                    if isinstance(result, dict) and "text" in result:
+                        print(result["text"])
+                    else:
+                        print(json.dumps(result, ensure_ascii=False, indent=2))
+                else:
+                    print(json.dumps(data, ensure_ascii=False, indent=2))
+                return
+
+        timeout = 120 if AGENT == "dev" else 20
+        await asyncio.wait_for(wait_reply(), timeout=timeout)
+    except asyncio.TimeoutError:
+        print(f"\033[1;33m⏱️ 超时 ({timeout}s)，Agent 未回复\033[0m")
+        print("可能原因:")
+        print("  1. Agent 未运行 → rrclaw status")
+        print("  2. action 名错误 → 请检查 skills yaml")
+    finally:
+        await pubsub.unsubscribe(reply_ch)
+        await r.aclose()
+
+asyncio.run(main())
+PYEOF
+}
+
+# ── souls ─────────────────────────────────────────
+cmd_souls() {
+    echo ""
+    echo -e "${BOLD}Agent SOUL 概览${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    for soul_file in "${SCRIPT_DIR}/agents/souls/"*.md; do
+        local name=$(basename "$soul_file" .md)
+        local title=$(head -1 "$soul_file" | sed 's/^# //')
+        local size=$(wc -c < "$soul_file" | tr -d ' ')
+        local skills_file="${SCRIPT_DIR}/agents/skills/${name}_skills.yaml"
+        local skill_count=0
+        if [ -f "$skills_file" ]; then
+            skill_count=$(grep -c "^  - name:" "$skills_file" 2>/dev/null || echo 0)
+        fi
+        printf "  %-16s %-35s ${DIM}%sB  %s skills${NC}\n" "${name}" "${title}" "${size}" "${skill_count}"
+    done
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# ── gen-plists: 从 registry 生成 LaunchAgent plists ─
+# 内部函数，生成 plist 文件到对应用户的 LaunchAgents 目录
+_gen_plists() {
+    mkdir -p "${LA_DIR}"
+    sudo mkdir -p "${CLAW_LA_DIR}" "${CLAW_LOGS}" 2>/dev/null || true
+    sudo chown ${CLAW_USER}:staff "${CLAW_LA_DIR}" "${CLAW_LOGS}" 2>/dev/null || true
+
+    local zayl_count=0
+    local claw_count=0
+
+    while IFS=$'\t' read -r name type target env label auto run_as; do
+        : ${run_as:=clawagent}
+        local plist_label="com.openclaw.${label:-$name}"
+
+        local work_dir venv_path log_dir plist_dir
+        if [ "$run_as" = "zayl" ]; then
+            work_dir="${SCRIPT_DIR}"
+            venv_path="${VENV}"
+            log_dir="${LOGS_DIR}"
+            plist_dir="${LA_DIR}"
+            zayl_count=$((zayl_count + 1))
+        else
+            work_dir="${CLAW_DIR}"
+            venv_path="${CLAW_VENV}"
+            log_dir="${CLAW_LOGS}"
+            plist_dir="${CLAW_LA_DIR}"
+            claw_count=$((claw_count + 1))
+        fi
+
+        local plist_file="${plist_dir}/${plist_label}.plist"
+        local logfile="${log_dir}/${label:-$name}.log"
+        local errfile="${log_dir}/${label:-$name}.err"
+
+        local env_source_snippet=""
+        if [ -n "$env" ] && [ "$env" != "-" ]; then
+            env_source_snippet="
+        <key>ENV_FILE</key>
+        <string>${work_dir}/${env}</string>"
+        fi
+
+        if [ "$type" = "agent" ]; then
+            local plist_content="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<dict>
+    <key>Label</key>
+    <string>${plist_label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${venv_path}/bin/python</string>
+        <string>-m</string>
+        <string>${target}</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${work_dir}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>${logfile}</string>
+    <key>StandardErrorPath</key>
+    <string>${errfile}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>PYTHONPATH</key>
+        <string>${work_dir}</string>
+        <key>REDIS_URL</key>
+        <string>redis://127.0.0.1:6379/0</string>${env_source_snippet}
+    </dict>
+</dict>
+</plist>"
+        else
+            local plist_content="<?xml version=\"1.0\" encoding=\"UTF-8\"?>
+<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">
+<plist version=\"1.0\">
+<dict>
+    <key>Label</key>
+    <string>${plist_label}</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>${venv_path}/bin/python</string>
+        <string>${work_dir}/${target}</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>${work_dir}</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>5</integer>
+    <key>StandardOutPath</key>
+    <string>${logfile}</string>
+    <key>StandardErrorPath</key>
+    <string>${errfile}</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>${venv_path}/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>PYTHONPATH</key>
+        <string>${work_dir}</string>
+        <key>REDIS_URL</key>
+        <string>redis://127.0.0.1:6379/0</string>${env_source_snippet}
+    </dict>
+</dict>
+</plist>"
+        fi
+
+        if [ "$run_as" = "zayl" ]; then
+            echo "$plist_content" > "${plist_file}"
+        else
+            echo "$plist_content" | sudo tee "${plist_file}" > /dev/null
+            sudo chown ${CLAW_USER}:staff "${plist_file}"
+        fi
+        echo -e "  ${GREEN}✓${NC} ${plist_file} ${DIM}(${run_as})${NC}"
+    done < <(_parse_registry)
+
+    echo ""
+    echo -e "  zayl: ${zayl_count} 个 → ${LA_DIR}/"
+    echo -e "  clawagent: ${claw_count} 个 → ${CLAW_LA_DIR}/"
+}
+
+# ── install: 生成 plists + launchctl 加载全部组件 ──
+cmd_install() {
+    echo -e "${CYAN}安装 LaunchAgent 服务 (从 registry.yaml 生成 + 加载)...${NC}"
+    echo ""
+
+    # 1. 生成 plist
+    _gen_plists
+
+    echo ""
+    echo -e "${CYAN}加载 LaunchAgent 服务...${NC}"
+
+    # 2. launchctl bootstrap
+    local zayl_uid=$(id -u)
+    local claw_uid=$(id -u ${CLAW_USER} 2>/dev/null || echo "503")
+
+    while IFS=$'\t' read -r name type target env label auto run_as; do
+        : ${run_as:=clawagent}
+        local plist_label="com.openclaw.${label:-$name}"
+
+        if [ "$run_as" = "zayl" ]; then
+            local plist_file="${LA_DIR}/${plist_label}.plist"
+            launchctl bootout "gui/${zayl_uid}/${plist_label}" 2>/dev/null || true
+            if launchctl bootstrap "gui/${zayl_uid}" "$plist_file" 2>/dev/null; then
+                echo -e "  ${GREEN}✓${NC} ${name} (launchd, zayl)"
+            else
+                echo -e "  ${RED}✗${NC} ${name} 加载失败"
+            fi
+        else
+            local plist_file="${CLAW_LA_DIR}/${plist_label}.plist"
+            sudo launchctl bootout "gui/${claw_uid}/${plist_label}" 2>/dev/null || true
+            if sudo launchctl bootstrap "gui/${claw_uid}" "$plist_file" 2>/dev/null; then
+                echo -e "  ${GREEN}✓${NC} ${name} (launchd, ${CLAW_USER})"
+            else
+                echo -e "  ${RED}✗${NC} ${name} 加载失败"
+            fi
+        fi
+    done < <(_parse_registry)
+
+    echo ""
+    echo -e "${GREEN}安装完成 — 所有组件已注册为 LaunchAgent 服务${NC}"
+    echo -e "${DIM}开机自动启动 (RunAtLoad + KeepAlive)${NC}"
+    echo -e "${DIM}查看状态: rrclaw status${NC}"
+}
+
+# ── uninstall: 卸载全部 LaunchAgent 服务 ─────────
+cmd_uninstall() {
+    echo -e "${CYAN}卸载 LaunchAgent 服务...${NC}"
+
+    local zayl_uid=$(id -u)
+    local claw_uid=$(id -u ${CLAW_USER} 2>/dev/null || echo "503")
+
+    while IFS=$'\t' read -r name type target env label auto run_as; do
+        : ${run_as:=clawagent}
+        local plist_label="com.openclaw.${label:-$name}"
+
+        if [ "$run_as" = "zayl" ]; then
+            local plist_file="${LA_DIR}/${plist_label}.plist"
+            launchctl bootout "gui/${zayl_uid}/${plist_label}" 2>/dev/null || true
+            rm -f "$plist_file"
+            echo -e "  ${GREEN}✓${NC} ${name} 已卸载 (zayl)"
+        else
+            local plist_file="${CLAW_LA_DIR}/${plist_label}.plist"
+            sudo launchctl bootout "gui/${claw_uid}/${plist_label}" 2>/dev/null || true
+            sudo rm -f "$plist_file"
+            echo -e "  ${GREEN}✓${NC} ${name} 已卸载 (${CLAW_USER})"
+        fi
+    done < <(_parse_registry)
+
+    echo ""
+    echo -e "${GREEN}卸载完成 — 所有 LaunchAgent plist 已移除${NC}"
+}
+
+# ── deploy: 同步 clawagent 组件到 clawagent 目录 ──
+cmd_deploy() {
+    if [ ! -d "${CLAW_DIR}" ]; then
+        echo -e "${YELLOW}目标目录不存在: ${CLAW_DIR}${NC}"
+        echo "创建: sudo mkdir -p ${CLAW_DIR}/agents/{souls,skills,memory,data_sources} ${CLAW_LOGS}"
+        return 1
+    fi
+
+    echo -e "${CYAN}同步 clawagent 组件代码到 ${CLAW_DIR}...${NC}"
+    echo -e "${DIM}(仅同步 run_as=clawagent 的组件所需文件)${NC}"
+
+    sudo cp "${SCRIPT_DIR}/agents/"*.py "${CLAW_DIR}/agents/"
+    sudo cp -r "${SCRIPT_DIR}/agents/memory/" "${CLAW_DIR}/agents/memory/" 2>/dev/null || true
+    sudo cp -r "${SCRIPT_DIR}/agents/data_sources/" "${CLAW_DIR}/agents/data_sources/" 2>/dev/null || true
+    sudo cp "${SCRIPT_DIR}/agents/souls/"*.md "${CLAW_DIR}/agents/souls/" 2>/dev/null || true
+    sudo cp "${SCRIPT_DIR}/agents/skills/"*.yaml "${CLAW_DIR}/agents/skills/" 2>/dev/null || true
+
+    sudo cp "${SCRIPT_DIR}/telegram_bot.py" "${CLAW_DIR}/"
+    sudo cp "${SCRIPT_DIR}/feishu_bot.py" "${CLAW_DIR}/"
+    sudo cp "${SCRIPT_DIR}/webchat_api.py" "${CLAW_DIR}/"
+    sudo cp "${SCRIPT_DIR}/webchat_frontend.html" "${CLAW_DIR}/"
+    sudo cp "${SCRIPT_DIR}/rules.yaml" "${CLAW_DIR}/" 2>/dev/null || true
+    sudo cp "${SCRIPT_DIR}/registry.yaml" "${CLAW_DIR}/" 2>/dev/null || true
+
+    for envf in telegram.env feishu.env webchat.env .env; do
+        if [ -f "${SCRIPT_DIR}/${envf}" ]; then
+            sudo cp "${SCRIPT_DIR}/${envf}" "${CLAW_DIR}/" 2>/dev/null || true
+        fi
+    done
+
+    sudo find "${CLAW_DIR}" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+    sudo chown -R ${CLAW_USER}:staff "${CLAW_DIR}"
+
+    echo -e "${GREEN}✓ clawagent 代码已同步${NC}"
+    echo ""
+    echo -e "${DIM}zayl 用户组件 (apple/desktop/browser/dev) 直接运行于 ${SCRIPT_DIR}，无需同步${NC}"
+    echo -e "${DIM}运行 'rrclaw restart all' 使变更生效${NC}"
+}
+
+# ── help ──────────────────────────────────────────
+cmd_help() {
+    echo ""
+    echo -e "${BOLD}rrclaw${NC} — ReachRich Claw Multi-Agent 运维管理工具"
+    echo -e "${DIM}registry: ${REGISTRY}${NC}"
+    echo ""
+    echo -e "${BOLD}状态:${NC}"
+    echo "  rrclaw status              全部组件运行状态"
+    echo "  rrclaw heartbeat           Agent 心跳 (Redis)"
+    echo "  rrclaw souls               Agent SOUL/技能概览"
+    echo ""
+    echo -e "${BOLD}服务管理:${NC}"
+    echo "  rrclaw start [name|all]    启动组件"
+    echo "  rrclaw stop [name|all]     停止组件"
+    echo "  rrclaw restart [name|all]  重启组件"
+    echo ""
+    echo -e "${BOLD}开发:${NC}"
+    echo "  rrclaw dev <name>          前台运行组件 (Ctrl+C 退出)"
+    echo ""
+    echo -e "${BOLD}日志:${NC}"
+    echo "  rrclaw logs <name> [行数]  查看日志"
+    echo "  rrclaw follow <name>       实时跟踪日志"
+    echo ""
+    echo -e "${BOLD}部署:${NC}"
+    echo "  rrclaw deploy              同步 clawagent 组件到 /Users/clawagent/openclaw"
+    echo "  rrclaw install             生成 plists + 加载全部 LaunchAgent (开机自启)"
+    echo "  rrclaw uninstall           卸载全部 LaunchAgent 并清理 plists"
+    echo ""
+    echo -e "${BOLD}Redis:${NC}"
+    echo "  rrclaw redis status        Redis 状态"
+    echo "  rrclaw redis start/stop    启动/停止 Redis"
+    echo "  rrclaw redis flush         清除 OpenClaw 数据"
+    echo "  rrclaw redis monitor       实时消息流"
+    echo ""
+    echo -e "${BOLD}测试:${NC}"
+    echo "  rrclaw test <agent> [action]  发送测试消息"
+    echo ""
+    echo -e "${BOLD}已注册组件:${NC}"
+    printf "  %-20s %-8s %-10s %s\n" "NAME" "TYPE" "RUN_AS" "MODULE"
+    _parse_registry | awk -F'\t' '{printf "  %-20s %-8s %-10s %s\n", $1, $2, $7, $3}'
+    echo ""
+}
+
+# ── 入口 ──────────────────────────────────────────
+case "${1:-help}" in
+    status)         cmd_status ;;
+    heartbeat|hb)   cmd_heartbeat ;;
+    logs|log)       cmd_logs "${2}" "${3}" ;;
+    follow|f)       cmd_follow "${2}" ;;
+    start)          cmd_start "${2}" ;;
+    stop)           cmd_stop "${2}" ;;
+    restart)        cmd_restart "${2}" ;;
+    dev)            cmd_dev "${2}" ;;
+    deploy)         cmd_deploy ;;
+    install)        cmd_install ;;
+    uninstall)      cmd_uninstall ;;
+    gen-plists)     _gen_plists ;;  # 兼容旧命令，静默生成
+    redis)          cmd_redis "${2}" ;;
+    test)           cmd_test "${2}" "${3}" "${4}" ;;
+    souls)          cmd_souls ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        echo -e "${RED}未知命令: ${1}${NC}"
+        cmd_help
+        exit 1
+        ;;
+esac

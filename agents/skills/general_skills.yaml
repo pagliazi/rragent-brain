@@ -1,0 +1,67 @@
+agent: general
+version: "1.0"
+description: "通用智能助手 — 知识问答/推理分析/翻译/写作/计算/摘要"
+requires_llm: true
+llm_preference: "qwen3.5-plus"
+memory:
+  recall: "三层拓扑记忆 (向量+图谱+时序)"
+  embedding: "本地 bge-m3 优先 → 云端 API 回退"
+
+skills:
+  - name: ask
+    description: "回答用户的通用知识问题、进行推理分析"
+    params:
+      question: { type: string, required: true, desc: "用户的问题" }
+      context: { type: string, required: false, desc: "附加上下文信息" }
+    returns:
+      text: "结构化的回答文本"
+    examples:
+      - question: "量子计算和经典计算的区别"
+      - question: "帮我分析一下这个方案的优缺点"
+      - question: "Python 的 GIL 是什么"
+
+  - name: translate
+    description: "多语言翻译"
+    params:
+      text: { type: string, required: true, desc: "要翻译的文本" }
+      target_lang: { type: string, default: "auto", desc: "目标语言 (zh/en/ja/ko/auto)" }
+    returns:
+      text: "翻译结果"
+
+  - name: summarize
+    description: "文本摘要和要点提取"
+    params:
+      text: { type: string, required: true, desc: "要总结的长文本" }
+      max_length: { type: int, default: 300, desc: "摘要最大字数" }
+    returns:
+      text: "摘要文本"
+
+  - name: write
+    description: "写作辅助：邮件、文案、文档"
+    params:
+      task: { type: string, required: true, desc: "写作任务描述" }
+      style: { type: string, default: "professional", desc: "风格: professional/casual/formal/creative" }
+    returns:
+      text: "生成的文本"
+
+  - name: explain_code
+    description: "代码解释和 Bug 分析"
+    params:
+      code: { type: string, required: true, desc: "代码片段" }
+      language: { type: string, default: "auto", desc: "编程语言" }
+    returns:
+      text: "代码解释文本"
+
+  - name: calculate
+    description: "数学计算和公式推导"
+    params:
+      expression: { type: string, required: true, desc: "数学表达式或问题描述" }
+    returns:
+      text: "计算结果和推导过程"
+
+  - name: search
+    description: "联网搜索最新信息（委托 BrowserAgent）"
+    params:
+      query: { type: string, required: true, desc: "搜索关键词" }
+    returns:
+      text: "搜索结果摘要"

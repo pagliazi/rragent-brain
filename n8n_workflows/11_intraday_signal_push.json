@@ -1,0 +1,53 @@
+{
+  "name": "rragents - 盘中选股信号推送 (每30分钟)",
+  "nodes": [
+    {
+      "id": "schedule-intraday",
+      "name": "盘中定时触发 (9:30-15:00)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [250, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {"field": "cronExpression", "expression": "0,30 9-11 * * 1-5"},
+            {"field": "cronExpression", "expression": "0,30 13-15 * * 1-5"}
+          ]
+        }
+      },
+      "typeVersion": 1.2
+    },
+    {
+      "id": "scan-push",
+      "name": "1. 扫描高分策略 + 推送信号",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [470, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/intraday/scan-and-push",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {"name": "min_sharpe", "value": "2.0"},
+            {"name": "top_n", "value": "20"},
+            {"name": "push", "value": "true"}
+          ]
+        },
+        "options": {"timeout": 120000}
+      },
+      "typeVersion": 4.2
+    }
+  ],
+  "connections": {
+    "盘中定时触发 (9:30-15:00)": {
+      "main": [[{"node": "1. 扫描高分策略 + 推送信号", "type": "main", "index": 0}]]
+    }
+  },
+  "active": true
+}

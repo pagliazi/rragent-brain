@@ -1,0 +1,212 @@
+{
+  "name": "rragents - 策略优化 (盘中30min/盘后1h)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "field": "cronExpression", "expression": "0,30 9-15 * * 1-5"  },
+            { "field": "cronExpression", "expression": "0 20,21 * * 1-5"    },
+            { "field": "cronExpression", "expression": "30 23 * * 0-4"      }
+          ]
+        }
+      },
+      "id": "schedule-optimize",
+      "name": "盘中每30min + 盘后",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [ 220, 300 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/optimize-strategies",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token",  "value": "openclaw-n8n-2026" },
+            { "name": "Content-Type", "value": "application/json"  }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const h = $now.hour; const isIntraday = h >= 9 && h < 16; const isHot = (h === 9 && $now.minute >= 30) || (h === 10) || (h === 13 && $now.minute < 40); return JSON.stringify({ max_strategies: isHot ? 12 : isIntraday ? 8 : 5, max_variants: isHot ? 14 : isIntraday ? 10 : 6, improvement_threshold: 0.03, ultra_short_priority: true, prefer_timeframes: ['10s','15s','30s','1min','2min','3min','5min'], ultra_short_min_sharpe: 0.5 }); })() }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "trigger-optimize",
+      "name": "1. 启动策略优化",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 440, 300 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-optimizing",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "optimizing",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-optimizing",
+      "name": "有策略可优化?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 660, 300 ]
+    },
+    {
+      "parameters": {
+        "amount": "={{ $now.hour >= 9 && $now.hour < 16 ? 10 : 15 }}",
+        "unit": "minutes"
+      },
+      "id": "wait-optimize",
+      "name": "等待优化完成",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [ 880, 200 ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/events?limit=10",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-N8n-Token", "value": "openclaw-n8n-2026" }
+          ]
+        }
+      },
+      "id": "get-result",
+      "name": "2. 获取优化结果",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1100, 200 ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const events = $input.first().json.events || [];\nconst optEvent = events.find(e => e.type === 'strategy_optimize_done');\n\nlet msg = `🔧 rragents 策略优化报告 ${new Date().toLocaleString()}\\n`;\nmsg += `━━━━━━━━━━━━━━━━━━\\n`;\n\nif (!optEvent) {\n  msg += '⏳ 策略优化仍在进行中...';\n} else if (optEvent.optimized === 0) {\n  msg += `📭 ${optEvent.message || '本轮无策略改进'}`;\n} else {\n  msg += `✅ 成功优化 ${optEvent.optimized} 个策略:\\n\\n`;\n  const strats = optEvent.strategies || [];\n  strats.forEach((s, i) => {\n    const tf = s.timeframe ? `[${s.timeframe}]` : '';\n    msg += `${i+1}. [${s.theme}]${tf} ${s.method}\\n`;\n    msg += `   Sharpe: ${(s.original_sharpe||0).toFixed(2)} → ${(s.new_sharpe||0).toFixed(2)} (${s.improvement})\\n`;\n    msg += `   质量: ${s.quality_grade} | 测试变体: ${s.variants_tested}\\n`;\n    msg += `   新策略ID: ${s.new_strategy_id}\\n`;\n  });\n  msg += `\\n🎯 优化后策略已部署至 ReachRich`;\n}\n\nconst shouldNotify = optEvent && optEvent.optimized > 0;\nreturn [{json: {message: msg, shouldNotify, optimized: optEvent ? optEvent.optimized : 0}}];"
+      },
+      "id": "gen-report",
+      "name": "3. 生成优化报告",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [ 1320, 200 ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-notify",
+              "leftValue": "={{ $json.shouldNotify }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-notify",
+      "name": "有改进?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [ 1540, 200 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{\"chat_id\":\"-1003731324560\",\"message_thread_id\":5,\"text\":' + JSON.stringify($json.message) + ',\"parse_mode\":\"HTML\"}' }}"
+      },
+      "id": "tg-optimize",
+      "name": "→ TG 通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1760, 100 ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/2a2df595-8b4e-4d2d-8264-4916b928258f",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({msg_type: 'text', content: {text: $json.message}}) }}"
+      },
+      "id": "feishu-optimize",
+      "name": "→ 飞书通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [ 1760, 300 ]
+    }
+  ],
+  "connections": {
+    "盘中每30min + 盘后": {
+      "main": [[ { "node": "1. 启动策略优化", "type": "main", "index": 0 } ]]
+    },
+    "1. 启动策略优化": {
+      "main": [[ { "node": "有策略可优化?", "type": "main", "index": 0 } ]]
+    },
+    "有策略可优化?": {
+      "main": [
+        [ { "node": "等待优化完成", "type": "main", "index": 0 } ],
+        []
+      ]
+    },
+    "等待优化完成": {
+      "main": [[ { "node": "2. 获取优化结果", "type": "main", "index": 0 } ]]
+    },
+    "2. 获取优化结果": {
+      "main": [[ { "node": "3. 生成优化报告", "type": "main", "index": 0 } ]]
+    },
+    "3. 生成优化报告": {
+      "main": [[ { "node": "有改进?", "type": "main", "index": 0 } ]]
+    },
+    "有改进?": {
+      "main": [
+        [
+          { "node": "→ TG 通知",  "type": "main", "index": 0 },
+          { "node": "→ 飞书通知", "type": "main", "index": 0 }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

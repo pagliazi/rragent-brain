@@ -1,0 +1,118 @@
+# ═══════════════════════════════════════════════════════
+# ReachRich Claw — Agent/Channel/Service 注册表
+# 这是系统中所有组件的唯一事实来源 (Single Source of Truth)
+# rrclaw 从此文件读取，不再硬编码列表
+#
+# run_as: 指定运行用户
+#   zayl      — 需要 GUI / Apple Events / SSH key 的特权 agent
+#   clawagent — 最小权限，纯计算 / 网络 agent（默认值）
+# ═══════════════════════════════════════════════════════
+
+agents:
+  orchestrator:
+    module: agents.orchestrator
+    autostart: true
+    run_as: clawagent
+
+  market:
+    module: agents.market_agent
+    autostart: true
+    label: market-agent
+    run_as: clawagent
+
+  analysis:
+    module: agents.analysis_agent
+    autostart: true
+    label: analysis-agent
+    run_as: clawagent
+
+  dev:
+    module: agents.dev_agent
+    autostart: true
+    label: dev-agent
+    run_as: zayl
+
+  browser:
+    module: agents.browser_agent
+    autostart: true
+    label: browser-agent
+    run_as: clawagent
+
+  desktop:
+    module: agents.desktop_agent
+    autostart: true
+    label: desktop-agent
+    run_as: zayl
+
+  news:
+    module: agents.news_agent
+    autostart: true
+    label: news-agent
+    run_as: clawagent
+
+  strategist:
+    module: agents.strategist_agent
+    autostart: true
+    label: strategist-agent
+    run_as: clawagent
+
+  general:
+    module: agents.general_agent
+    autostart: true
+    label: general-agent
+    run_as: clawagent
+
+  apple:
+    module: agents.apple_agent
+    autostart: true
+    label: apple-agent
+    run_as: zayl
+
+  backtest:
+    module: agents.backtest_agent
+    autostart: true
+    label: backtest-agent
+    run_as: clawagent
+
+  monitor:
+    module: agents.monitor_agent
+    autostart: true
+    label: monitor-agent
+    run_as: clawagent
+
+channels:
+  telegram:
+    script: telegram_bot.py
+    env_file: telegram.env
+    autostart: true
+    label: telegram-bot
+    run_as: clawagent
+
+  feishu:
+    script: feishu_bot.py
+    env_file: feishu.env
+    autostart: true
+    label: feishu-bot
+    run_as: clawagent
+
+services:
+  rragent:
+    script: rragent_server.py
+    env_file: webchat.env
+    port: 7789
+    autostart: true
+    run_as: clawagent
+
+  webchat:
+    script: webchat_api.py          # 旧服务，保留向后兼容，主服务已迁移到 rragent
+    env_file: webchat.env
+    port: 7799
+    autostart: false
+    run_as: clawagent
+
+  n8n:
+    script: n8n_wrapper.py
+    port: 5678
+    label: n8n
+    autostart: true
+    run_as: clawagent

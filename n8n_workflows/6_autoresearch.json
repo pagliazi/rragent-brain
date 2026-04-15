@@ -1,0 +1,317 @@
+{
+  "name": "rragents - autoresearch MLX",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 1,
+              "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 9,
+              "triggerAtMinute": 0
+            },
+            {
+              "triggerAtHour": 17,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      },
+      "id": "schedule-autoresearch",
+      "name": "3x/day",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/autoresearch",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8n-Token",
+              "value": "openclaw-n8n-2026"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"max_experiments\": 5, \"timeout_minutes\": 60, \"model\": \"sonnet\"}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "trigger-autoresearch",
+      "name": "1. Start Experiments",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "is-started",
+              "leftValue": "={{ $json.action }}",
+              "rightValue": "started",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-started",
+      "name": "Started?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "amount": 65,
+        "unit": "minutes"
+      },
+      "id": "wait-experiments",
+      "name": "Wait 65min",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/autoresearch/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8n-Token",
+              "value": "openclaw-n8n-2026"
+            }
+          ]
+        }
+      },
+      "id": "get-status",
+      "name": "2. Get Results",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nlet msg = `\\u{1F52C} autoresearch MLX ${new Date().toLocaleString()}\\n`;\nmsg += `\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\u2501\\n`;\nmsg += `Running: ${data.running ? 'Yes' : 'No'}\\n`;\n\nif (data.best_val_bpb) {\n  msg += `\\u{1F3C6} Best val_bpb: ${data.best_val_bpb.toFixed(6)}\\n`;\n}\nif (data.latest_val_bpb) {\n  msg += `\\u{1F4CA} Latest val_bpb: ${data.latest_val_bpb.toFixed(6)}\\n`;\n}\n\nconst results = data.results || [];\nif (results.length > 0) {\n  msg += `\\n\\u{1F4CB} Experiment log (${results.length} runs):\\n`;\n  results.slice(-5).forEach((r, i) => {\n    msg += `  ${r.status === 'keep' ? '\\u2705' : r.status === 'crash' ? '\\u274C' : '\\u{1F504}'} ${r.description || 'n/a'} | bpb=${r.val_bpb} | mem=${r.memory_gb}GB\\n`;\n  });\n}\n\nconst shouldNotify = data.best_val_bpb || results.length > 0;\nreturn [{json: {message: msg, shouldNotify}}];"
+      },
+      "id": "gen-report",
+      "name": "3. Gen Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-notify",
+              "leftValue": "={{ $json.shouldNotify }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-notify",
+      "name": "Has Results?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{\"chat_id\":\"-1003731324560\",\"message_thread_id\":5,\"text\":' + JSON.stringify($json.message) + ',\"parse_mode\":\"HTML\"}' }}"
+      },
+      "id": "tg-autoresearch",
+      "name": "TG Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/2a2df595-8b4e-4d2d-8264-4916b928258f",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({msg_type: 'text', content: {text: $json.message}}) }}"
+      },
+      "id": "feishu-autoresearch",
+      "name": "Feishu Notify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "3x/day": {
+      "main": [
+        [
+          {
+            "node": "1. Start Experiments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. Start Experiments": {
+      "main": [
+        [
+          {
+            "node": "Started?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Started?": {
+      "main": [
+        [
+          {
+            "node": "Wait 65min",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Wait 65min": {
+      "main": [
+        [
+          {
+            "node": "2. Get Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. Get Results": {
+      "main": [
+        [
+          {
+            "node": "3. Gen Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "3. Gen Report": {
+      "main": [
+        [
+          {
+            "node": "Has Results?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Results?": {
+      "main": [
+        [
+          {
+            "node": "TG Notify",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Feishu Notify",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,262 @@
+rules:
+  - name: "涨停异常报警"
+    enabled: true
+    topic: market
+    trigger:
+      agent: market
+      event: limitup_count_change
+      condition: "count > 30"
+    actions:
+      - agent: analysis
+        action: ask
+        params:
+          question: "涨停数量突增，分析原因和板块集中度"
+      - agent: orchestrator
+        action: notify
+        params:
+          priority: high
+
+  - name: "定时行情摘要"
+    enabled: true
+    trigger:
+      schedule: "*/5 9:30-15:00 * * 1-5"
+    actions:
+      - agent: market
+        action: get_summary
+      - agent: analysis
+        action: brief_analysis
+
+  - name: "盘前提醒"
+    enabled: true
+    topic: market
+    trigger:
+      schedule: "25 9 * * 1-5"
+    actions:
+      - agent: market
+        action: get_limitstep
+        params:
+          page_size: 10
+      - agent: orchestrator
+        action: notify
+
+  - name: "收盘总结"
+    enabled: true
+    topic: market
+    trigger:
+      schedule: "5 15 * * 1-5"
+    actions:
+      - agent: market
+        action: get_all_raw
+      - agent: analysis
+        action: ask
+        params:
+          question: "收盘总结: 分析今日整体市场表现、涨停梯队、板块轮动、明日展望"
+      - agent: orchestrator
+        action: notify
+
+  - name: "记忆图谱每日备份"
+    enabled: true
+    trigger:
+      schedule: "0 23 * * *"
+    actions:
+      - agent: orchestrator
+        action: memory_backup
+
+  - name: "记忆拓扑压缩（每周日）"
+    enabled: true
+    trigger:
+      schedule: "30 23 * * 7"
+    actions:
+      - agent: orchestrator
+        action: memory_compress
+
+  - name: "记忆健康检查"
+    enabled: true
+    trigger:
+      schedule: "0 8 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: memory_health
+
+  - name: "跨Agent记忆提醒（盘中）"
+    enabled: true
+    trigger:
+      schedule: "*/10 9:30-15:00 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: memory_remind
+
+  - name: "跨Agent记忆提醒（盘后）"
+    enabled: true
+    trigger:
+      schedule: "30 15 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: memory_remind
+
+  - name: "嵌入缓存清理（每周日）"
+    enabled: true
+    trigger:
+      schedule: "0 4 * * 7"
+    actions:
+      - agent: orchestrator
+        action: embed_cache_prune
+
+  - name: "SOUL 身份完整性检查"
+    enabled: true
+    trigger:
+      schedule: "0 */6 * * *"
+    actions:
+      - agent: orchestrator
+        action: soul_check
+
+  - name: "盘前综合简报"
+    enabled: true
+    trigger:
+      schedule: "20 9 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: daily_briefing
+
+  - name: "盘后综合简报"
+    enabled: true
+    trigger:
+      schedule: "10 15 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: daily_briefing
+
+  - name: "记忆卫生周报"
+    enabled: true
+    trigger:
+      schedule: "0 9 * * 1"
+    actions:
+      - agent: orchestrator
+        action: memory_hygiene
+
+  - name: "渠道健康状态推送"
+    enabled: true
+    topic: system
+    trigger:
+      schedule: "0 */4 * * *"
+    actions:
+      - agent: orchestrator
+        action: channel_status
+
+  - name: "策略师收盘复盘"
+    enabled: true
+    topic: strategy
+    trigger:
+      schedule: "15 15 * * 1-5"
+    actions:
+      - agent: strategist
+        action: daily_review
+      - agent: orchestrator
+        action: notify
+
+  - name: "策略师风险监测（盘中）"
+    enabled: true
+    topic: strategy
+    trigger:
+      schedule: "*/15 9:30-15:00 * * 1-5"
+    actions:
+      - agent: strategist
+        action: risk_alert
+
+  - name: "策略师板块研判（午盘）"
+    enabled: true
+    topic: strategy
+    trigger:
+      schedule: "35 11 * * 1-5"
+    actions:
+      - agent: strategist
+        action: sector_thesis
+      - agent: orchestrator
+        action: notify
+
+  - name: "财报季事件跟踪"
+    enabled: true
+    topic: strategy
+    trigger:
+      schedule: "0 8 * * 1-5"
+    actions:
+      - agent: news
+        action: get_news
+        params:
+          keyword: "财报 业绩预告 业绩快报"
+      - agent: strategist
+        action: ask_strategy
+        params:
+          question: "结合最新财报公告，分析可能影响市场情绪的重大业绩事件"
+      - agent: orchestrator
+        action: notify
+
+  - name: "每日系统反思洞察"
+    enabled: true
+    topic: system
+    trigger:
+      schedule: "30 22 * * *"
+    actions:
+      - agent: orchestrator
+        action: reflect_insight
+      - agent: orchestrator
+        action: notify
+        params:
+          priority: low
+
+  - name: "每周系统智能周报"
+    enabled: true
+    topic: system
+    trigger:
+      schedule: "0 9 * * 1"
+    actions:
+      - agent: orchestrator
+        action: reflect_weekly
+      - agent: orchestrator
+        action: notify
+        params:
+          priority: normal
+
+  - name: "反思引擎持久化（每日）"
+    enabled: true
+    trigger:
+      schedule: "55 23 * * *"
+    actions:
+      - agent: orchestrator
+        action: reflect_stats
+
+  # ── 因子挖掘自动化 ──────────────────────────────
+  - name: "因子挖掘（盘后轻量）"
+    enabled: true
+    trigger:
+      schedule: "0 16 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: digger
+        params:
+          rounds: 3
+          factors: 5
+          interval: 60
+
+  - name: "因子挖掘（夜间深度）"
+    enabled: true
+    trigger:
+      schedule: "0 22 * * *"
+    actions:
+      - agent: orchestrator
+        action: digger
+        params:
+          rounds: 10
+          factors: 5
+          interval: 120
+
+  - name: "因子穷举融合（每日盘后）"
+    enabled: true
+    trigger:
+      schedule: "30 17 * * 1-5"
+    actions:
+      - agent: orchestrator
+        action: combine_exhaustive
+        params:
+          group_size: 2
+          max_combos: 30

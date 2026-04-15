@@ -1,0 +1,45 @@
+agent: strategist
+version: "1.0"
+description: "策略分析师 — 中短期策略框架维护、每日复盘、板块研判、风险监测"
+requires_llm: true
+llm_preference: "analysis"
+memory:
+  recall: "三层拓扑记忆 + 跨Agent复合检索 (market/news/analysis)"
+  remind: "自动接收来自 AnalysisAgent/NewsAgent 的相关记忆提醒"
+  embedding: "本地 bge-m3 优先 → 云端 API 回退"
+
+skills:
+  - name: daily_review
+    description: "收盘复盘: 拉取当日所有数据+记忆，生成策略视角总结并更新状态文件"
+    params: {}
+    returns:
+      text: "策略复盘报告全文"
+      state_updated: "策略状态是否已更新"
+    trigger: "rules.yaml 15:10 自动触发"
+
+  - name: sector_thesis
+    description: "板块研判: 跟踪板块轮动趋势，更新板块多空观点"
+    params:
+      sector: { type: string, required: false, desc: "指定板块名称（留空则全盘研判）" }
+    returns:
+      text: "板块研判报告"
+
+  - name: risk_alert
+    description: "风险提示: 检测异常信号（连板断裂、板块分歧等）"
+    params: {}
+    returns:
+      text: "风险提示文本（无异常则返回空）"
+      alert_level: "none / low / medium / high"
+
+  - name: ask_strategy
+    description: "策略问答: 基于历史记忆和当前数据回答策略问题"
+    params:
+      question: { type: string, required: true, desc: "策略类问题" }
+    returns:
+      text: "带策略视角的回答"
+
+  - name: update_state
+    description: "手动触发更新策略状态文件"
+    params: {}
+    returns:
+      text: "当前策略状态摘要"

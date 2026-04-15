@@ -1,0 +1,135 @@
+agent: monitor
+version: "2.0"
+description: "基础设施监控告警 — Prometheus/Grafana 查询、告警检测、主机健康、PromQL 执行"
+requires_llm: true
+llm_preference: "qwen3.5-plus"
+
+data_sources:
+  prometheus:
+    url: "http://192.168.1.133:9090"
+    apis: ["/api/v1/alerts", "/api/v1/targets", "/api/v1/rules", "/api/v1/query", "/api/v1/label/__name__/values"]
+  grafana:
+    url: "http://192.168.1.133:3030"
+    apis: ["/api/search", "/api/dashboards/uid/*", "/api/prometheus/grafana/api/v1/alerts"]
+
+background:
+  poll_interval: 60
+  auto_start: true
+  description: "每 60 秒自动巡检 Prometheus 告警和采集目标状态"
+
+skills:
+  - name: check_alerts
+    description: "查询 Prometheus 当前活跃告警 (firing + pending)"
+    params: {}
+    returns:
+      text: "格式化的告警列表"
+      firing_count: "正在触发的告警数"
+      pending_count: "待触发的告警数"
+      alerts: "原始告警数据"
+    examples:
+      - command: "/alerts"
+      - command: "有没有告警"
+
+  - name: check_targets
+    description: "查询 Prometheus 采集目标健康状态 (UP/DOWN)"
+    params: {}
+    returns:
+      text: "目标状态报告"
+      up_count: "正常目标数"
+      down_count: "异常目标数"
+    examples:
+      - command: "/targets"
+      - command: "监控目标状态"
+
+  - name: alert_history
+    description: "查询告警历史记录 (触发/恢复时间线)"
+    params:
+      count: { type: int, default: 20, desc: "返回记录数 (最多100)" }
+    returns:
+      text: "告警历史列表"
+      records: "原始记录数组"
+    examples:
+      - command: "/alert_history 30"
+
+  - name: grafana_alerts
+    description: "查询 Grafana 仪表盘告警状态"
+    params: {}
+    returns:
+      text: "Grafana 告警列表"
+      alerts: "原始告警数据"
+    examples:
+      - command: "/grafana_alerts"
+
+  - name: summary
+    description: "综合巡检报告 (Prometheus告警 + 目标状态 + Grafana + AI分析)"
+    params: {}
+    returns:
+      text: "完整巡检报告 (含 AI 分析建议)"
+    examples:
+      - command: "/patrol"
+      - command: "巡检"
+      - command: "系统状态怎么样"
+
+  - name: silence
+    description: "临时静默指定告警 (暂停通知)"
+    params:
+      alertname: { type: string, required: true, desc: "要静默的告警名称" }
+      duration: { type: int, default: 60, desc: "静默时长 (分钟)" }
+    returns:
+      text: "静默确认信息"
+    examples:
+      - command: "/silence NoDataCollectedToday 120"
+
+  - name: check_cert
+    description: "查询 SSL 证书到期时间 (从 Prometheus blackbox_exporter 获取)"
+    params:
+      domain: { type: string, default: "", desc: "域名过滤 (可选，为空返回所有)" }
+    returns:
+      text: "证书到期状态报告 (含剩余天数)"
+    examples:
+      - command: "/cert rr.zayl.net"
+      - command: "rr的证书还有几天到期"
+
+  - name: query
+    description: "执行任意 PromQL 查询表达式"
+    params:
+      promql: { type: string, required: true, desc: "PromQL 表达式" }
+    returns:
+      text: "格式化的查询结果"
+      results: "原始 Prometheus 结果数组"
+    examples:
+      - command: "/query up"
+      - command: "/query node_cpu_seconds_total"
+      - command: "查一下 up 指标"
+
+  - name: metrics
+    description: "搜索/浏览 Prometheus 可用 metric 名称"
+    params:
+      keyword: { type: string, default: "", desc: "搜索关键词 (为空列出全部)" }
+    returns:
+      text: "按前缀分类的 metric 列表"
+    examples:
+      - command: "/metrics cpu"
+      - command: "/metrics network"
+      - command: "有哪些磁盘相关指标"
+
+  - name: host_health
+    description: "查询主机健康摘要 (CPU/内存/磁盘/负载/网络)"
+    params:
+      host: { type: string, default: "", desc: "主机 IP 或实例名 (为空查所有 node_exporter)" }
+    returns:
+      text: "主机资源使用报告"
+    examples:
+      - command: "/host 192.168.1.139"
+      - command: "139服务器状态"
+      - command: "服务器内存使用率"
+
+  - name: grafana_dash
+    description: "列出 Grafana 仪表盘或查看指定仪表盘面板详情"
+    params:
+      uid: { type: string, default: "", desc: "仪表盘 UID (为空列出全部)" }
+    returns:
+      text: "仪表盘列表或面板详情"
+    examples:
+      - command: "/grafana_dash"
+      - command: "/grafana_dash abc123"

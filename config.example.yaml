@@ -1,0 +1,112 @@
+# RRAgent Harness Configuration
+# Copy to rragent.yaml and customize for your environment.
+# Environment variables override YAML values (see README).
+
+# ── RRAgent Gateway ──
+gateway:
+  # Gateway WebSocket URL
+  # Override: GATEWAY_URL
+  url: "ws://127.0.0.1:18789"
+
+  # Gateway authentication token (optional)
+  # Override: GATEWAY_TOKEN
+  auth_token: ""
+
+  # Agent ID registered in Gateway
+  agent_id: "rragent"
+
+# ── LLM Providers ──
+providers:
+  # Primary model (prefix determines provider)
+  #   anthropic/claude-sonnet-4-6
+  #   dashscope/qwen3.5-plus
+  #   ollama/qwen2.5-coder:14b
+  primary: "anthropic/claude-sonnet-4-6"
+
+  # Fallback chain: tried in order when primary fails
+  fallback_chain:
+    - "dashscope/qwen3.5-plus"
+    # - "ollama/qwen2.5-coder:14b"
+
+# ── Redis ──
+redis:
+  # Redis connection URL (shared with PyAgent system)
+  # Override: REDIS_URL
+  url: "redis://127.0.0.1:6379/0"
+
+# ── Hermes Agent ──
+hermes:
+  # Path to hermes-agent installation
+  # Override: HERMES_AGENT_PATH
+  agent_path: ""
+
+  # Iteration budget per conversation turn
+  iteration_budget: 90
+
+  # Default toolsets for Hermes tasks
+  default_toolsets:
+    - core
+    - web
+    - terminal
+
+# ── Context Engineering ──
+context:
+  # Max tokens for context window
+  max_tokens: 200000
+
+  # Autocompact triggers when token usage exceeds this ratio
+  autocompact_threshold: 0.8
+
+  # Tool results larger than this get truncated with preview
+  tool_result_max_chars: 50000
+
+# ── Session Persistence ──
+session:
+  # Directory for JSONL session files
+  dir: "~/.rragent/sessions"
+
+  # Auto-rotate session file at this size (bytes)
+  rotation_size: 262144  # 256KB
+
+# ── Resilience ──
+resilience:
+  # Health check interval (seconds)
+  health_check_interval: 10
+
+# ── Skills ──
+skills:
+  # Auto-sync skills between RRAgent, RRAgent, Hermes
+  auto_sync: true
+
+  # Sync interval in hours
+  sync_interval_hours: 6
+
+# ── ReachRich Market Data ──
+reachrich:
+  # Bridge API endpoint (internal network)
+  # Override: REACHRICH_URL
+  base_url: ""
+
+  # HMAC signing key for Bridge API authentication
+  # Override: REACHRICH_SECRET
+  secret: ""
+
+  # User token for real-time data stream authentication (HMAC signing)
+  # Registered ReachRich users receive this token from the platform.
+  # Used to verify HMAC signatures on Redis Stream messages.
+  # Override: REACHRICH_TOKEN
+  token: ""
+
+  # Path to directory containing bridge_client.py
+  # Override: BRIDGE_CLIENT_PATH
+  bridge_client_path: ""
+
+  # Verify HMAC signatures on real-time stream messages
+  stream_verify_hmac: true
+
+# ── ACP Runtime (optional) ──
+acp:
+  # Enable ACP WebSocket server for Gateway takeover
+  enabled: false
+  host: "127.0.0.1"
+  port: 7790

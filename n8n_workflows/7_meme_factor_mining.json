@@ -1,0 +1,111 @@
+{
+  "name": "rragents - 妖股因子挖掘",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 9,  "triggerAtMinute": 10 },
+            { "triggerAtHour": 11, "triggerAtMinute": 30 },
+            { "triggerAtHour": 15, "triggerAtMinute": 5  },
+            { "triggerAtHour": 20, "triggerAtMinute": 30 }
+          ]
+        }
+      },
+      "id": "yao-trigger",
+      "name": "定时触发 (4次/天)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 妖股挖掘参数计算\nconst now = new Date();\nconst hour = now.getHours();\nconst dayOfWeek = now.getDay();\n\n// 非交易日: 周六日跳过\nif (dayOfWeek === 0 || dayOfWeek === 6) {\n  return [{ json: { skip: true, reason: '非交易日' } }];\n}\n\n// 盘前 (9:10): 挖掘振幅压缩+量价共振，预测当日启动\nif (hour === 9) {\n  return [{ json: {\n    skip: false,\n    rounds: 2,\n    factors_per_round: 5,\n    focus_theme: 'yao_amplitude_compression',\n    session_label: '盘前-振幅压缩'\n  }}];\n}\n\n// 午盘 (11:30): 挖掘开盘强度+尾盘特征\nif (hour === 11) {\n  return [{ json: {\n    skip: false,\n    rounds: 2,\n    factors_per_round: 5,\n    focus_theme: 'yao_opening_attack',\n    session_label: '午盘-竞价强势'\n  }}];\n}\n\n// 盘后 (15:05): 全主题随机挖掘，样本最全\nif (hour === 15) {\n  return [{ json: {\n    skip: false,\n    rounds: 3,\n    factors_per_round: 5,\n    focus_theme: null,\n    session_label: '盘后-全主题'\n  }}];\n}\n\n// 夜间 (20:30): 挖掘连板动量+筹码整理\nif (hour === 20) {\n  return [{ json: {\n    skip: false,\n    rounds: 3,\n    factors_per_round: 5,\n    focus_theme: 'yao_chip_consolidation',\n    session_label: '夜间-筹码蓄势'\n  }}];\n}\n\nreturn [{ json: { skip: true, reason: 'unexpected hour' } }];"
+      },
+      "id": "yao-params",
+      "name": "0. 计算妖股挖掘参数",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "yao-skip-check",
+      "name": "1. 是否跳过?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [700, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/yao_mine",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"rounds\": {{ $('0. 计算妖股挖掘参数').item.json.rounds }},\n  \"factors_per_round\": {{ $('0. 计算妖股挖掘参数').item.json.factors_per_round }},\n  \"focus_theme\": {{ $('0. 计算妖股挖掘参数').item.json.focus_theme ? '\"' + $('0. 计算妖股挖掘参数').item.json.focus_theme + '\"' : 'null' }}\n}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "yao-trigger-api",
+      "name": "2. 触发妖股挖掘",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [950, 200],
+      "credentials": { "httpHeaderAuth": { "id": "openclaw-n8n-auth", "name": "OpenClaw N8N Auth" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const result = $input.item.json;\nconst label = $('0. 计算妖股挖掘参数').item.json.session_label || '妖股挖掘';\n\nif (result.skipped) {\n  console.log(`[妖股] ${label} - 跳过: ${result.message}`);\n  return [{ json: { status: 'skipped', label } }];\n}\n\nconsole.log(`[妖股] ${label} - 已启动: ${result.message}`);\nreturn [{ json: { status: 'started', label, message: result.message } }];"
+      },
+      "id": "yao-log",
+      "name": "3. 记录启动状态",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1200, 200]
+    }
+  ],
+  "connections": {
+    "定时触发 (4次/天)": {
+      "main": [[{ "node": "0. 计算妖股挖掘参数", "type": "main", "index": 0 }]]
+    },
+    "0. 计算妖股挖掘参数": {
+      "main": [[{ "node": "1. 是否跳过?", "type": "main", "index": 0 }]]
+    },
+    "1. 是否跳过?": {
+      "main": [
+        [{ "node": "2. 触发妖股挖掘", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "2. 触发妖股挖掘": {
+      "main": [[{ "node": "3. 记录启动状态", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [{ "createdAt": "2026-04-02T00:00:00.000Z", "updatedAt": "2026-04-02T00:00:00.000Z", "id": "yao-mining-tag", "name": "妖股" }],
+  "triggerCount": 0,
+  "updatedAt": "2026-04-02T00:00:00.000Z",
+  "versionId": "yao-v1"
+}

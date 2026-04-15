@@ -1,0 +1,84 @@
+agent: browser
+version: "2.0"
+description: "浏览器自动化专家 — agent-browser (Rust CLI) + Playwright + browser-use 三层执行链"
+requires_llm: true
+llm_preference: "deepseek-chat"
+
+execution_chain:
+  - layer: 1
+    engine: "agent-browser"
+    type: "community_skill"
+    desc: "Rust 实现, accessibility-tree 定位, 并行会话, session 持久化"
+    install: "clawhub install thesethrose/agent-browser"
+  - layer: 2
+    engine: "playwright"
+    type: "built-in"
+    desc: "截图/PDF 专用, Chromium headless"
+  - layer: 3
+    engine: "browser_use"
+    type: "built-in"
+    desc: "复杂多步 AI 任务兜底"
+
+skills:
+  - name: open_url
+    description: "打开 URL — agent-browser 优先（快速+带 accessibility snapshot），Playwright 兜底"
+    params:
+      url: { type: string, required: true, desc: "完整 URL（含 http/https）" }
+      screenshot: { type: bool, default: true, desc: "是否截图（仅 Playwright 路径）" }
+    returns:
+      title: "页面标题"
+      url: "最终页面 URL"
+      snapshot: "accessibility tree snapshot (agent-browser)"
+      screenshot_path: "截图文件路径 (Playwright)"
+      source: "agent-browser | playwright"
+
+  - name: task
+    description: "执行浏览器任务 — 简单任务走 agent-browser CLI，复杂多步任务走 browser_use Agent"
+    params:
+      task: { type: string, required: true, desc: "自然语言任务描述" }
+      max_steps: { type: int, default: 20, desc: "最大执行步数 (browser_use)" }
+      force_browser_use: { type: bool, default: false, desc: "强制使用 browser_use（跳过 agent-browser）" }
+    returns:
+      text: "任务结果文本"
+      snapshot: "页面结构 (agent-browser)"
+      source: "agent-browser | browser_use"
+
+  - name: screenshot
+    description: "URL 截图（始终用 Playwright，agent-browser 主要输出 accessibility tree）"
+    params:
+      url: { type: string, required: true, desc: "目标 URL" }
+      full_page: { type: bool, default: false, desc: "是否全页截图" }
+    returns:
+      screenshot_path: "截图文件路径"
+
+  - name: snapshot
+    description: "获取当前页面 accessibility tree（agent-browser 独有能力）"
+    trigger: "/snapshot"
+    params:
+      selector: { type: string, required: false, desc: "可选 CSS selector 过滤" }
+      compact: { type: bool, default: false, desc: "紧凑模式" }
+    returns:
+      snapshot: "accessibility tree JSON"
+
+  - name: click
+    description: "点击页面元素（agent-browser ref-based 交互）"
+    params:
+      ref: { type: string, required: true, desc: "accessibility tree 中的 ref ID" }
+    returns:
+      text: "操作结果"
+
+  - name: fill
+    description: "填充表单（agent-browser ref-based 交互）"
+    params:
+      ref: { type: string, required: true, desc: "accessibility tree 中的 ref ID" }
+      text: { type: string, required: true, desc: "填充内容" }
+    returns:
+      text: "操作结果"
+
+browser_config:
+  engine: "chromium"
+  mode: "headless"
+  viewport: { width: 1280, height: 800 }
+  navigation_timeout: 30000
+  wait_until: "networkidle"
+  screenshot_format: "png"

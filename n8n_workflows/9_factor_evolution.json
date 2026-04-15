@@ -1,0 +1,153 @@
+{
+  "name": "rragents - 因子进化 + 五层分类 + Screener推送 (每4小时)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */4 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-evolve",
+      "name": "每4小时",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/evolve-factors",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"max_factors\": 8}",
+        "options": {"timeout": 30000}
+      },
+      "id": "trigger-evolve",
+      "name": "1. 触发因子进化",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "amount": 10,
+        "unit": "minutes"
+      },
+      "id": "wait-evolve",
+      "name": "等待进化完成 (10min)",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/classify-factors",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": false,
+        "options": {"timeout": 60000}
+      },
+      "id": "trigger-classify",
+      "name": "2. 五层因子分类",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-classify",
+      "name": "等待分类完成",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [1100, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/push-screener-groups",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"types\": [\"elite\", \"diversified\", \"thematic\"], \"min_pool_score_v2\": 0.5}",
+        "options": {"timeout": 120000}
+      },
+      "id": "trigger-push-screener",
+      "name": "3. 推送三类 Screener 因子组",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1320, 300]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/pipeline/status",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"}
+          ]
+        },
+        "options": {"timeout": 10000}
+      },
+      "id": "get-status",
+      "name": "4. 获取最终状态",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1540, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ (() => { const ev = $('3. 推送三类 Screener 因子组').item.json; const cl = $('2. 五层因子分类').item.json; return JSON.stringify({ chat_id: '-4650954212', text: `🧬 <b>因子进化周报</b>\\n\\n五层分级:\\n  T1精英: ${cl.tier_elite || 0}  T2高质: ${cl.tier_high || 0}\\n  T3标准: ${cl.tier_standard || 0}  T4边际: ${cl.tier_marginal || 0}\\n  T5退休: ${cl.tier_retired || 0}\\n\\nScreener推送:\\n  精英组: ${ev.elite_groups || 0} 组\\n  多元化: ${ev.diversified_groups || 0} 组\\n  主题组: ${ev.thematic_groups || 0} 组\\n  总因子: ${ev.total_factors || 0} 个`, parse_mode: 'HTML' }); })() }}",
+        "options": {"timeout": 10000}
+      },
+      "id": "notify-telegram",
+      "name": "5. Telegram 通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1760, 300]
+    }
+  ],
+  "connections": {
+    "每4小时": {"main": [[{"node": "1. 触发因子进化", "type": "main", "index": 0}]]},
+    "1. 触发因子进化": {"main": [[{"node": "等待进化完成 (10min)", "type": "main", "index": 0}]]},
+    "等待进化完成 (10min)": {"main": [[{"node": "2. 五层因子分类", "type": "main", "index": 0}]]},
+    "2. 五层因子分类": {"main": [[{"node": "等待分类完成", "type": "main", "index": 0}]]},
+    "等待分类完成": {"main": [[{"node": "3. 推送三类 Screener 因子组", "type": "main", "index": 0}]]},
+    "3. 推送三类 Screener 因子组": {"main": [[{"node": "4. 获取最终状态", "type": "main", "index": 0}]]},
+    "4. 获取最终状态": {"main": [[{"node": "5. Telegram 通知", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["rragents", "factor", "evolution", "screener", "tier"]
+}

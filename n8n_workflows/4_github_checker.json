@@ -1,0 +1,257 @@
+{
+  "name": "rragents - GitHub 版本 + Skills 检查",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9,21 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-github",
+      "name": "每天 9/21 点检查",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.github.com/orgs/openclaw/repos?sort=updated&per_page=20",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Accept",
+              "value": "application/vnd.github.v3+json"
+            },
+            {
+              "name": "User-Agent",
+              "value": "rragents-n8n"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "get-repos",
+      "name": "1a. 获取 GitHub 仓库",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// 暂存 GitHub repos 数据，传递给下一步\nconst repos = $input.first().json;\nreturn [{json: {repos: Array.isArray(repos) ? repos : []}}];"
+      },
+      "id": "stash-repos",
+      "name": "暂存仓库数据",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://pypi.org/pypi/openclaw-sdk/json",
+        "options": {
+          "timeout": 10000
+        }
+      },
+      "id": "get-pypi",
+      "name": "1b. 检查 PyPI 版本",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const pypiData = $input.first().json || {};\nconst repos = $('暂存仓库数据').first().json.repos || [];\n\nconst currentVersion = '2.1.0';\nconst latestPyPI = pypiData.info?.version || currentVersion;\nconst hasNewVersion = latestPyPI !== currentVersion;\n\nconst now = new Date();\nconst oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);\nconst oneWeekAgo = new Date(now - 7 * 24 * 60 * 60 * 1000);\n\nconst recentRepos = repos.filter(r => {\n  const updated = new Date(r.updated_at || r.pushed_at);\n  return updated > oneWeekAgo;\n});\n\nconst skillRepos = repos.filter(r => {\n  const name = (r.name || '').toLowerCase();\n  const desc = (r.description || '').toLowerCase();\n  return name.includes('skill') || name.includes('plugin') || name.includes('connector') ||\n         desc.includes('skill') || desc.includes('plugin') || desc.includes('agent');\n});\n\nconst reposUpdated24h = repos.filter(r => {\n  const updated = new Date(r.updated_at || r.pushed_at);\n  return updated > oneDayAgo;\n});\n\nlet shouldNotify = false;\nlet msg = `🐙 rragents GitHub 巡检 ${now.toLocaleDateString()}\\n`;\nmsg += `━━━━━━━━━━━━━━━━━━\\n`;\n\nif (hasNewVersion) {\n  shouldNotify = true;\n  msg += `\\n🆕 openclaw-sdk 有新版本!\\n`;\n  msg += `  当前: v${currentVersion} → 最新: v${latestPyPI}\\n`;\n  msg += `  建议: pip install --upgrade openclaw-sdk\\n`;\n  const releases = pypiData.releases || {};\n  const latestRelease = releases[latestPyPI];\n  if (latestRelease && latestRelease.length > 0) {\n    msg += `  发布时间: ${latestRelease[0].upload_time || ''}\\n`;\n  }\n} else {\n  msg += `\\n📦 openclaw-sdk v${currentVersion} (最新)\\n`;\n}\n\nif (recentRepos.length > 0) {\n  shouldNotify = true;\n  msg += `\\n📂 近7天活跃仓库 (${recentRepos.length}个):\\n`;\n  recentRepos.slice(0, 8).forEach(r => {\n    const updated = new Date(r.updated_at || r.pushed_at).toLocaleDateString();\n    msg += `  • ${r.name} ⭐${r.stargazers_count || 0} (${updated})\\n`;\n    if (r.description) msg += `    ${r.description.substring(0, 60)}\\n`;\n  });\n}\n\nif (skillRepos.length > 0) {\n  shouldNotify = true;\n  msg += `\\n🧩 Skills/Plugin 仓库:\\n`;\n  skillRepos.forEach(r => {\n    msg += `  • ${r.name}: ${(r.description || '无描述').substring(0, 80)}\\n`;\n    msg += `    ${r.html_url}\\n`;\n  });\n  msg += `\\n💡 建议: 评估以上 skills 是否适合部署到 rragents`;\n}\n\nif (reposUpdated24h.length > 0) {\n  msg += `\\n🔄 24h内更新: ${reposUpdated24h.map(r => r.name).join(', ')}\\n`;\n}\n\nif (!shouldNotify) {\n  msg += `\\n✅ 无新版本或更新`;\n}\n\nreturn [{json: {message: msg, shouldNotify, hasNewVersion, recentCount: recentRepos.length, skillCount: skillRepos.length}}];"
+      },
+      "id": "analyze-github",
+      "name": "2. 分析更新",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "should-notify",
+              "leftValue": "={{ $json.shouldNotify }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-notify",
+      "name": "有更新?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{\"chat_id\":\"-1003731324560\",\"message_thread_id\":7,\"text\":' + JSON.stringify($json.message) + ',\"parse_mode\":\"HTML\"}' }}"
+      },
+      "id": "tg-github",
+      "name": "→ TG 通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/2a2df595-8b4e-4d2d-8264-4916b928258f",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({msg_type: 'text', content: {text: $json.message}}) }}"
+      },
+      "id": "feishu-github",
+      "name": "→ 飞书通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "每天 9/21 点检查": {
+      "main": [
+        [
+          {
+            "node": "1a. 获取 GitHub 仓库",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1a. 获取 GitHub 仓库": {
+      "main": [
+        [
+          {
+            "node": "暂存仓库数据",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "暂存仓库数据": {
+      "main": [
+        [
+          {
+            "node": "1b. 检查 PyPI 版本",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1b. 检查 PyPI 版本": {
+      "main": [
+        [
+          {
+            "node": "2. 分析更新",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. 分析更新": {
+      "main": [
+        [
+          {
+            "node": "有更新?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "有更新?": {
+      "main": [
+        [
+          {
+            "node": "→ TG 通知",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "→ 飞书通知",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

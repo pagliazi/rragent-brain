@@ -1,0 +1,65 @@
+agent: news
+version: "3.0"
+description: "舆情监控分析师 — 新闻查询 + 网搜 + AI 摘要 + 深度研究"
+requires_llm: true
+llm_preference: "deepseek-chat"
+data_source:
+  primary: "http://192.168.1.138/api/"
+  backup: "akshare (自动降级切换)"
+memory:
+  recall: "三层拓扑记忆 + 跨Agent提醒"
+  remind: "自动接收来自 AnalysisAgent 的相关记忆提醒"
+
+skills:
+  - name: get_news
+    description: "按关键词检索最新市场新闻列表"
+    params:
+      keyword: { type: string, required: false, desc: "搜索关键词（空则返回全部最新）" }
+      page_size: { type: int, default: 10, desc: "返回条数" }
+    returns:
+      text: "格式化的新闻列表（序号+日期+标题+来源）"
+      raw: "原始 API JSON 数据"
+    api_endpoints:
+      primary: "news/"
+      fallback: "sentiment/"
+
+  - name: summarize_news
+    description: "AI 驱动的舆情智能摘要（3-5个要点）"
+    params:
+      keyword: { type: string, required: false, desc: "搜索关键词" }
+    returns:
+      text: "带 📰 前缀的舆情摘要分析"
+    llm_usage:
+      input: "最近15条新闻的标题+内容摘要（各200字）"
+      prompt_template: "金融舆情分析师角色 + 新闻数据 + 3-5要点要求"
+      output: "结构化的情绪判断+事件提取+板块关联"
+
+  - name: web_search
+    description: "网络搜索 + API 新闻联合搜索，LLM 融合摘要 (DDG Lite + 138 API)"
+    trigger: "/ws <关键词> 或 /web_search <关键词>"
+    params:
+      query: { type: string, required: true, desc: "搜索关键词" }
+    returns:
+      text: "综合搜索结果 (DDG + API 融合)"
+      raw_ddg: "DDG 原始结果列表"
+
+  - name: deep_research
+    description: "深度专题研究 (academic-deep-research / agent-deep-research skill)"
+    trigger: "/research <主题> 或 /deep <主题>"
+    params:
+      topic: { type: string, required: true, desc: "研究主题" }
+      mode: { type: string, default: "academic", desc: "研究模式: academic(无外部依赖) | gemini(需GOOGLE_API_KEY)" }
+      timeout: { type: int, default: 120, desc: "超时(秒)" }
+    returns:
+      text: "深度研究报告"
+    community_skills:
+      - "academic-deep-research (kesslerio) — 无外部依赖, 双循环学术研究"
+      - "agent-deep-research (24601) — Google Gemini 驱动"
+
+analysis_dimensions:
+  - name: "市场情绪"
+    values: ["乐观", "中性偏乐观", "中性", "中性偏悲观", "悲观"]
+  - name: "事件类型"
+    values: ["政策面", "行业面", "公司面", "国际面"]
+  - name: "影响评级"
+    values: ["重大利好", "利好", "中性", "利空", "重大利空"]

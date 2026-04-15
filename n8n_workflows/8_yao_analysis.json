@@ -1,0 +1,176 @@
+{
+  "name": "rragents - 妖股因子分析与迭代优化",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            { "triggerAtHour": 15, "triggerAtMinute": 35 },
+            { "triggerAtHour": 21, "triggerAtMinute": 0  }
+          ]
+        }
+      },
+      "id": "yao-analysis-trigger",
+      "name": "定时触发 (盘后+夜间)",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const now = new Date();\nconst hour = now.getHours();\nconst dow = now.getDay();\n// 周末只做夜间分析\nconst isTradeDay = dow >= 1 && dow <= 5;\nreturn [{\n  json: {\n    session: hour < 20 ? 'post_market' : 'evening',\n    isTradeDay,\n    runSignals: isTradeDay && hour < 20,\n    ts: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "yao-ctx",
+      "name": "0. 上下文判断",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/yao/analyze",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "timeout": 30000 }
+      },
+      "id": "yao-analyze",
+      "name": "1. 分析妖股因子库",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [680, 300],
+      "credentials": { "httpHeaderAuth": { "id": "openclaw-n8n-auth", "name": "OpenClaw N8N Auth" } }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "strict" },
+          "conditions": [
+            {
+              "id": "trade-day-check",
+              "leftValue": "={{ $('0. 上下文判断').item.json.runSignals }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "equals" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "yao-signal-gate",
+      "name": "2. 是否刷新信号?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [920, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/yao/signals/refresh",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"top_n\": 3}",
+        "options": { "timeout": 120000 }
+      },
+      "id": "yao-signals",
+      "name": "3. 刷新实盘信号",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 200],
+      "credentials": { "httpHeaderAuth": { "id": "openclaw-n8n-auth", "name": "OpenClaw N8N Auth" } }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/yao/dashboard",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": { "timeout": 15000 }
+      },
+      "id": "yao-fetch-dash",
+      "name": "4. 获取 Dashboard 数据",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1160, 400],
+      "credentials": { "httpHeaderAuth": { "id": "openclaw-n8n-auth", "name": "OpenClaw N8N Auth" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "// 汇总分析结果生成通知消息\nconst dash = $('4. 获取 Dashboard 数据').item.json;\nconst summ = dash?.summary || {};\nconst themes = dash?.theme_stats || [];\nconst topFacs = dash?.top_factors || [];\nconst sig = dash?.signals || {};\nconst stocks = sig?.stocks || [];\n\n// 最优主题\nconst bestTheme = themes.sort((a,b)=>b.avg_sharpe-a.avg_sharpe)[0];\n// 最优因子\nconst bestFac = topFacs[0];\n\nlet msg = '🐉 妖股因子分析报告\\n';\nmsg += `━━━━━━━━━━━━━━━━━━\\n`;\nmsg += `📊 因子库: ${summ.total_factors || 0} 个 | ${summ.total_themes || 0} 个主题\\n`;\nmsg += `🏆 最佳Sharpe: ${summ.best_sharpe?.toFixed(3) || '—'}\\n`;\nmsg += `🎯 平均胜率: ${summ.avg_win_rate > 0 ? (summ.avg_win_rate*100).toFixed(1)+'%' : '—'}\\n\\n`;\n\nif (bestTheme) {\n  msg += `✨ 最优主题: ${bestTheme.theme_name}\\n`;\n  msg += `   因子数: ${bestTheme.count} | avgSharpe: ${bestTheme.avg_sharpe?.toFixed(2)}\\n\\n`;\n}\n\nif (stocks.length > 0) {\n  msg += `🎯 妖股候选 TOP ${Math.min(stocks.length,5)}:\\n`;\n  stocks.slice(0,5).forEach(s => {\n    msg += `  ${s.stock || s.code || '?'} (${s.factor_theme || '?'})\\n`;\n  });\n}\n\nreturn [{ json: { message: msg, summary: summ, best_theme: bestTheme, stock_count: stocks.length } }];"
+      },
+      "id": "yao-build-msg",
+      "name": "5. 构建通知消息",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1400, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/yao_mine",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"rounds\": 2, \"factors_per_round\": 5}",
+        "options": { "timeout": 10000 }
+      },
+      "id": "yao-auto-iterate",
+      "name": "6. 触发迭代挖掘",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1640, 300],
+      "credentials": { "httpHeaderAuth": { "id": "openclaw-n8n-auth", "name": "OpenClaw N8N Auth" } }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $('5. 构建通知消息').item.json.message;\nconst mineResult = $('6. 触发迭代挖掘').item.json;\nconsole.log('[妖股分析]', msg);\nconsole.log('[迭代挖掘]', mineResult?.message || mineResult?.ok);\nreturn [{ json: { done: true, notified: true, mineStarted: mineResult?.ok === true } }];"
+      },
+      "id": "yao-done",
+      "name": "7. 完成",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1880, 300]
+    }
+  ],
+  "connections": {
+    "定时触发 (盘后+夜间)": {
+      "main": [[{ "node": "0. 上下文判断", "type": "main", "index": 0 }]]
+    },
+    "0. 上下文判断": {
+      "main": [[{ "node": "1. 分析妖股因子库", "type": "main", "index": 0 }]]
+    },
+    "1. 分析妖股因子库": {
+      "main": [[{ "node": "2. 是否刷新信号?", "type": "main", "index": 0 }]]
+    },
+    "2. 是否刷新信号?": {
+      "main": [
+        [{ "node": "3. 刷新实盘信号", "type": "main", "index": 0 }],
+        [{ "node": "4. 获取 Dashboard 数据", "type": "main", "index": 0 }]
+      ]
+    },
+    "3. 刷新实盘信号": {
+      "main": [[{ "node": "4. 获取 Dashboard 数据", "type": "main", "index": 0 }]]
+    },
+    "4. 获取 Dashboard 数据": {
+      "main": [[{ "node": "5. 构建通知消息", "type": "main", "index": 0 }]]
+    },
+    "5. 构建通知消息": {
+      "main": [[{ "node": "6. 触发迭代挖掘", "type": "main", "index": 0 }]]
+    },
+    "6. 触发迭代挖掘": {
+      "main": [[{ "node": "7. 完成", "type": "main", "index": 0 }]]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true
+  },
+  "staticData": null,
+  "tags": [{ "id": "yao-tag", "name": "妖股" }],
+  "triggerCount": 0,
+  "versionId": "yao-analysis-v1"
+}

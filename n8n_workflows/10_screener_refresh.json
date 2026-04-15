@@ -1,0 +1,83 @@
+{
+  "name": "rragents - Screener快速刷新 (每2小时)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 */2 * * *"
+            }
+          ]
+        }
+      },
+      "id": "schedule-refresh",
+      "name": "每2小时30分",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [220, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/classify-factors",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": false,
+        "options": {"timeout": 60000}
+      },
+      "id": "trigger-classify",
+      "name": "1. 五层因子分类",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 300]
+    },
+    {
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "id": "wait-classify",
+      "name": "等待分类",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [660, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://127.0.0.1:7789/api/n8n/trigger/push-screener-groups",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "X-N8n-Token", "value": "openclaw-n8n-2026"},
+            {"name": "Content-Type", "value": "application/json"}
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "{\"types\": [\"elite\", \"diversified\", \"thematic\"], \"min_pool_score_v2\": 0.5}",
+        "options": {"timeout": 120000}
+      },
+      "id": "trigger-push-screener",
+      "name": "2. 推送三类 Screener",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [880, 300]
+    }
+  ],
+  "connections": {
+    "每2小时30分": {"main": [[{"node": "1. 五层因子分类", "type": "main", "index": 0}]]},
+    "1. 五层因子分类": {"main": [[{"node": "等待分类", "type": "main", "index": 0}]]},
+    "等待分类": {"main": [[{"node": "2. 推送三类 Screener", "type": "main", "index": 0}]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "staticData": null,
+  "tags": ["rragents", "screener", "refresh", "tier"]
+}

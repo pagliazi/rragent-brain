@@ -1,0 +1,87 @@
+agent: desktop
+version: "1.0"
+description: "macOS 桌面控制器 — 截屏/Shell/App/键鼠模拟"
+requires_llm: false
+platform: "macOS (Apple Silicon)"
+
+skills:
+  - name: screenshot
+    description: "截取当前桌面屏幕"
+    params:
+      resize: { type: string, default: "800", desc: "缩放宽度（像素），空字符串不缩放" }
+    returns:
+      screenshot_path: "截图文件路径（PNG）"
+    system_calls: ["screencapture -x", "sips --resampleWidth"]
+    requires_permission: "屏幕录制"
+
+  - name: shell
+    description: "在本地执行 shell 命令"
+    params:
+      command: { type: string, required: true, desc: "shell 命令" }
+      timeout: { type: int, default: 30, desc: "超时秒数" }
+    returns:
+      exit_code: "退出码"
+      output: "标准输出+错误输出（截断4000字符）"
+    safety: "内置危险命令拦截"
+
+  - name: open_app
+    description: "启动 macOS 应用程序"
+    params:
+      app: { type: string, required: true, desc: "应用名称（如 Safari, Terminal, Finder）" }
+    returns:
+      exit_code: "退出码"
+      output: "执行结果"
+    system_calls: ["open -a"]
+
+  - name: applescript
+    description: "执行任意 AppleScript 脚本"
+    params:
+      script: { type: string, required: true, desc: "AppleScript 代码（单行）" }
+    returns:
+      exit_code: "退出码"
+      output: "脚本输出"
+    system_calls: ["osascript -e"]
+
+  - name: type_text
+    description: "模拟键盘输入文本"
+    params:
+      text: { type: string, required: true, desc: "要输入的文本" }
+    returns:
+      exit_code: "退出码"
+    system_calls: ["osascript → System Events → keystroke"]
+    requires_permission: "辅助功能"
+
+  - name: key_press
+    description: "模拟按键（支持修饰键组合）"
+    params:
+      key: { type: string, required: true, desc: "键码数字" }
+      modifiers: { type: "list[string]", default: [], desc: "修饰键列表: command/option/shift/control" }
+    returns:
+      exit_code: "退出码"
+    common_keycodes:
+      Return: 36
+      Tab: 48
+      Escape: 53
+      Space: 49
+      Delete: 51
+      Up: 126
+      Down: 125
+      Left: 123
+      Right: 124
+
+  - name: click
+    description: "在指定屏幕坐标模拟鼠标左键点击"
+    params:
+      x: { type: int, required: true, desc: "X 坐标（屏幕左上角为0）" }
+      y: { type: int, required: true, desc: "Y 坐标（屏幕左上角为0）" }
+    returns:
+      exit_code: "退出码"
+    system_calls: ["cliclick c:x,y", "Python Quartz（回退方案）"]
+    requires_permission: "辅助功能"
+
+  - name: list_windows
+    description: "列出当前所有可见的应用进程"
+    params: {}
+    returns:
+      output: "逗号分隔的进程名列表"
+    system_calls: ["osascript → System Events → visible processes"]

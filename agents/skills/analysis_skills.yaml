@@ -1,0 +1,49 @@
+agent: analysis
+version: "2.0"
+description: "AI 市场分析师 — 基于行情数据的深度分析与研判"
+requires_llm: true
+llm_preference: "deepseek-chat"
+memory:
+  recall: "三层拓扑记忆 (向量+图谱+时序) + 跨Agent提醒"
+  remind: "自动接收来自 NewsAgent/DevAgent 的相关记忆提醒"
+  embedding: "本地 bge-m3 优先 → 云端 API 回退"
+
+skills:
+  - name: ask
+    description: "基于实时行情数据回答用户的市场分析问题"
+    params:
+      question: { type: string, required: true, desc: "用户的分析问题" }
+      market_data: { type: dict, required: false, desc: "MarketAgent 返回的原始数据（缺省则自动获取）" }
+    returns:
+      text: "带 📊 前缀的深度分析文本（500-1000字）"
+    examples:
+      - question: "分析今天市场"
+        flow: "get_all_raw → LLM分析 → 结构化输出"
+      - question: "板块轮动怎么看"
+        flow: "get_all_raw → 重点分析 concepts 数据 → 输出"
+      - question: "连板梯队健康吗"
+        flow: "get_all_raw → 重点分析 limitstep 数据 → 输出"
+
+  - name: brief_analysis
+    description: "生成 3-5 句话的市场快速速览"
+    params:
+      market_data: { type: dict, required: false, desc: "原始数据（缺省则自动获取）" }
+    returns:
+      text: "100-200字的市场简报"
+
+analysis_frameworks:
+  - name: "市场温度计"
+    input: "涨停数量 + 连板高度"
+    output: "冰点/正常/活跃/亢奋"
+
+  - name: "情绪周期"
+    input: "涨停数量趋势 + 连板梯队变化"
+    output: "冰点期/修复期/发酵期/高潮期/退潮期"
+
+  - name: "主线研判"
+    input: "板块涨幅 + 涨停集中度"
+    output: "主线板块 + 强度评级"
+
+  - name: "赚钱效应"
+    input: "连板股数量 + 封单额 + 涨停封板率"
+    output: "强/中/弱"

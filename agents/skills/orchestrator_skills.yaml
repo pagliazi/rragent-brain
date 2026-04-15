@@ -1,0 +1,211 @@
+agent: orchestrator
+version: "5.0"
+description: "统筹调度 — 精确命令路由+LLM意图识别柔性路由、跨Agent编排、规则引擎、记忆管理、安全防护、身份守护、LLM路由、主动简报、多渠道NotifyRouter(TG+飞书)+双向健康检查"
+
+skills:
+  - name: route
+    description: "将用户命令路由到对应的专项 Agent（精确命令走快速路径，未知命令/自由文本走 LLM 意图识别）"
+    params:
+      command: { type: string, required: true, desc: "用户命令名（不含/）或 chat（自由文本）" }
+      args: { type: string, required: false, desc: "命令参数或自然语言输入" }
+      reply_channel: { type: string, required: false, desc: "Redis 回复频道" }
+    routing_modes:
+      exact: "COMMAND_ROUTES 快速映射: /zt → market.get_limitup"
+      intent: "LLM 意图识别: 读取 skills YAML 能力清单 → 选择最佳 Agent + Action"
+      multi_step: "LLM 判断需多 Agent 协作时，生成执行计划顺序执行"
+
+  - name: status
+    description: "查询所有 Agent 的存活状态（基于心跳）"
+    returns: "各 Agent 的 alive/pid/last_seen"
+
+  - name: reload_rules
+    description: "热重载 rules.yaml 规则配置"
+    returns: "重载后的规则数量"
+
+  - name: notify
+    description: "统一多渠道推送通知 (通过 NotifyRouter 自动路由到活跃渠道)"
+    params:
+      text: { type: string, required: true, desc: "推送内容" }
+      topic: { type: string, required: false, desc: "话题分区: market/strategy/system, 默认 market" }
+      priority: { type: string, required: false, desc: "优先级: critical/high/normal/low, 默认 normal" }
+
+  - name: channel_status
+    description: "查询所有渠道健康状态 (Telegram/飞书 心跳、在线率、故障转移统计)"
+    returns: "channels/active/stats"
+
+  - name: channel_flush
+    description: "手动重发 pending 队列中的积压消息"
+    returns: "flushed count"
+
+  - name: memory_health
+    description: "全局图谱拓扑健康检查 + 降级日志"
+    returns: "节点数/边数/孤立节点/集群数/降级记录"
+
+  - name: memory_backup
+    description: "手动触发图谱每日备份"
+    returns: "backed_up: true/false"
+
+  - name: memory_compress
+    description: "对所有 Agent 执行拓扑压缩 + 孤立节点修复"
+    returns: "各 Agent 压缩统计 + orphan_fix 结果"
+
+  - name: memory_remind
+    description: "手动触发跨 Agent 冗余记忆扫描和提醒推送"
+    returns: "scanned/reminded 统计 + 提醒详情"
+
+  - name: data_source_status
+    description: "查询数据源路由器状态（主API/AKShare切换情况）"
+    returns: "current_source/fail_count/failover_ts"
+
+  - name: embed_status
+    description: "查询混合 Embedding 引擎状态（本地/云端/缓存命中率）"
+    returns: "local_available/cloud_provider/stats"
+
+  - name: embed_cache_prune
+    description: "清理过期嵌入缓存"
+    returns: "pruned: true/false"
+
+  - name: soul_check
+    description: "检查 SOUL.md 和 Skills YAML 的文件完整性（身份漂移检测）"
+    returns: "status(ok/tampered) + 变更列表"
+    source: "soul-guardian pattern"
+
+  - name: soul_accept
+    description: "接受当前 SOUL/Skills 文件状态为新基线（人工确认后调用）"
+    returns: "accepted: true"
+
+  - name: llm_status
+    description: "查询 LLM 智能路由器状态（本地/云端调用统计、速率限制）"
+    returns: "ollama_healthy/stats/rate_limits"
+    source: "llm-supervisor pattern"
+
+  - name: daily_briefing
+    description: "主动综合简报: 市场+新闻+记忆健康+身份状态+LLM使用+数据源 聚合推送"
+    returns: "briefing 文本 + 各子系统详情"
+    source: "proactive-agent + daily-briefing pattern"
+
+  - name: memory_hygiene
+    description: "记忆卫生报告: 嵌入一致性、孤立节点比例、图谱连通性、过期记忆占比"
+    returns: "health_score + issues + metrics"
+    source: "memory-hygiene pattern"
+
+  - name: memory_tier
+    description: "执行记忆分层 (HOT/WARM/COLD) — 基于时间和访问频率对记忆进行三级分类"
+    trigger: "/tier 或 /memory_tier"
+    returns: "各 Agent 各层级记忆数量统计 + 分层变更数"
+    source: "memory-tiering skill 集成"
+
+  - name: memory_tier_status
+    description: "查询当前记忆分层概况"
+    trigger: "/tier_status"
+    returns: "HOT/WARM/COLD 各层数量 + 按Agent分布"
+
+  - name: learnings
+    description: "查看/搜索结构化教训库 (.learnings/)"
+    trigger: "/learnings [keyword]"
+    params:
+      query: { type: string, required: false, desc: "搜索关键词 (空则返回统计)" }
+    returns: "教训条目列表或统计概览"
+    source: "actual-self-improvement skill 集成"
+
+  - name: log_learning
+    description: "手动记录一条教训到 .learnings/"
+    trigger: "/learn <内容>"
+    params:
+      summary: { type: string, required: true, desc: "教训摘要" }
+      category: { type: string, default: "correction", desc: "类型: correction/convention/workaround/performance/security" }
+    returns: "教训 ID"
+    source: "actual-self-improvement skill 集成"
+
+orchestration_patterns:
+  - name: "cross_agent_ask"
+    trigger: "/ask 命令"
+    steps:
+      - { agent: market, action: get_all_raw }
+      - { agent: analysis, action: ask, inject: "上一步数据作为 market_data" }
+
+  - name: "scheduled_summary"
+    trigger: "cron: */5 9:30-15:00"
+    steps:
+      - { agent: market, action: get_summary }
+      - { agent: analysis, action: brief_analysis }
+      - { agent: orchestrator, action: notify, channel: telegram }
+
+  - name: "close_review"
+    trigger: "cron: 5 15 * * 1-5"
+    steps:
+      - { agent: market, action: get_all_raw }
+      - { agent: analysis, action: ask, question: "收盘总结" }
+      - { agent: orchestrator, action: notify, channel: telegram }
+
+  - name: "memory_remind_cycle"
+    trigger: "自动循环 (600s)"
+    steps:
+      - { agent: orchestrator, action: memory_remind }
+
+  - name: "proactive_daily_briefing"
+    trigger: "cron: 20 9 + 10 15 (盘前盘后)"
+    steps:
+      - { agent: orchestrator, action: daily_briefing }
+    source: "proactive-agent pattern"
+
+  - name: "soul_guardian_loop"
+    trigger: "自动循环 (3600s)"
+    steps:
+      - { agent: orchestrator, action: soul_check }
+    source: "soul-guardian pattern"
+
+  - name: "memory_tiering_cycle"
+    trigger: "cron: 0 23 * * 0 (每周日23点)"
+    steps:
+      - { agent: orchestrator, action: memory_tier }
+    source: "memory-tiering skill"
+
+  - name: "learnings_review"
+    trigger: "cron: 30 23 * * 5 (每周五23:30)"
+    steps:
+      - { agent: orchestrator, action: learnings }
+    source: "actual-self-improvement skill"
+
+security:
+  input_guard:
+    enabled: true
+    max_input_length: 4096
+    blocks: "prompt injection / control chars / oversized input"
+  soul_guardian:
+    enabled: true
+    check_interval: "每小时"
+    baseline: "Redis 持久化哈希基线"
+    alert: "Telegram 即时通知"
+
+llm_routing:
+  strategy: "cloud-only (本地 Ollama 仅用于记忆嵌入 bge-m3)"
+  inference_chain: "Bailian → SiliconFlow → DeepSeek → DashScope → OpenAI"
+  task_profiles:
+    triage: "qwen3.5-plus / qwen-turbo (L1 轻量分诊)"
+    brief: "qwen3.5-plus / Qwen-Turbo (低成本快速)"
+    analysis: "qwen3-max / DeepSeek-V3 (深度分析)"
+    reasoning: "deepseek-reasoner / qwen3-max (L2 深度规划)"
+    code: "qwen3-coder-plus / DeepSeek-V3 (代码生成)"
+  local_ollama: "仅 bge-m3 嵌入模型，不占用推理资源"
+
+multichannel:
+  router: "NotifyRouter — 统一消息路由抽象层"
+  channels:
+    telegram: "主渠道 — Supergroup + Topics 话题分区"
+    feishu: "备用渠道 — 多群映射 (行情/策略/系统)"
+  topics:
+    market: "行情推送: 定时简报、涨停异常、盘前盘后"
+    query: "手动查询: /zt /lb /bk /hot /ask /news 等交互结果"
+    strategy: "策略分析: 策略师研判报告、每日复盘"
+    system: "系统运维: 记忆降级、SOUL 完整性、Agent 状态、渠道健康"
+  health_check:
+    heartbeat_interval: "10s (各 Bot 上报 Redis)"
+    cross_check: "30s (TG 检查飞书, 飞书检查 TG)"
+    auto_repair: "离线>60s 自动 launchctl kickstart"
+    pending_queue: "所有渠道离线时暂存 Redis List, 恢复时 flush"
+  priority:
+    critical: "广播所有渠道 + 需确认"
+    high: "广播所有渠道"
+    normal: "主渠道优先, 故障转移到备用"
+    low: "仅主渠道"

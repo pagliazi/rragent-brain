@@ -1,0 +1,21 @@
+date: '2026-03-17'
+main_themes:
+- 资源开采
+- 油气设服
+- 化工周期
+market_phase: 高位震荡
+recent_calls:
+- call: 高位震荡
+  date: '2026-03-17'
+  result: pending
+risk_level: medium
+watchlist:
+- note: 业绩验证期需甄别个股基本面，资金持续流入但警惕缩量加速
+  sector: 资源开采
+  stance: 偏多
+- note: 连板空间打开，关注龙头持续性
+  sector: 油气设服
+  stance: 偏多
+- note: 补库逻辑支撑有限，观察价格传导能力
+  sector: 化工周期
+  stance: 中性

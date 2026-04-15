@@ -1,0 +1,414 @@
+#!/bin/bash
+# ═══════════════════════════════════════════════════
+# oclaw — OpenClaw Multi-Agent 运维管理工具
+# 用法: oclaw <命令> [参数]
+# ═══════════════════════════════════════════════════
+
+set -e
+
+CLAW_USER="clawagent"
+CLAW_HOME="/Users/${CLAW_USER}"
+OPENCLAW_DIR="${CLAW_HOME}/openclaw"
+LOGS_DIR="${CLAW_HOME}/logs"
+LA_DIR="${CLAW_HOME}/Library/LaunchAgents"
+DEPLOY_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+DIM='\033[2m'
+BOLD='\033[1m'
+NC='\033[0m'
+
+get_uid() {
+    id -u ${CLAW_USER} 2>/dev/null || echo ""
+}
+
+AGENTS=(
+    "orchestrator"
+    "market-agent"
+    "analysis-agent"
+    "dev-agent"
+    "browser-agent"
+    "desktop-agent"
+    "news-agent"
+    "telegram-bot"
+    "webchat"
+)
+
+# ── status: 查看全部服务状态 ──────────────────────
+cmd_status() {
+    local uid=$(get_uid)
+    if [ -z "$uid" ]; then
+        echo -e "${RED}用户 ${CLAW_USER} 不存在${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BOLD}OpenClaw Multi-Agent 服务状态${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    printf "  %-28s %-8s %-8s %s\n" "SERVICE" "STATUS" "PID" "INFO"
+    echo "──────────────────────────────────────────────────────────"
+
+    for agent in "${AGENTS[@]}"; do
+        local label="com.openclaw.${agent}"
+        local pid=$(sudo launchctl print gui/${uid}/${label} 2>/dev/null | grep "pid = " | awk '{print $3}')
+        local plist="${LA_DIR}/${label}.plist"
+
+        if [ ! -f "${plist}" ]; then
+            printf "  %-28s ${DIM}%-8s${NC} %-8s %s\n" "${agent}" "未安装" "-" ""
+        elif [ -n "${pid}" ] && [ "${pid}" != "0" ]; then
+            local mem=$(ps -p ${pid} -o rss= 2>/dev/null | awk '{printf "%.0fMB", $1/1024}')
+            local cpu=$(ps -p ${pid} -o %cpu= 2>/dev/null | awk '{printf "%.1f%%", $1}')
+            printf "  %-28s ${GREEN}%-8s${NC} %-8s ${DIM}%s${NC}\n" "${agent}" "运行中" "${pid}" "mem:${mem} cpu:${cpu}"
+        else
+            printf "  %-28s ${RED}%-8s${NC} %-8s %s\n" "${agent}" "已停止" "-" ""
+        fi
+    done
+
+    echo "──────────────────────────────────────────────────────────"
+
+    # Redis
+    if redis-cli ping 2>/dev/null | grep -q PONG; then
+        local redis_pid=$(pgrep -x redis-server 2>/dev/null || echo "?")
+        local redis_mem=$(redis-cli info memory 2>/dev/null | grep "used_memory_human" | cut -d: -f2 | tr -d '\r')
+        local redis_keys=$(redis-cli dbsize 2>/dev/null | awk '{print $2}')
+        printf "  %-28s ${GREEN}%-8s${NC} %-8s ${DIM}%s${NC}\n" "redis" "运行中" "${redis_pid}" "mem:${redis_mem} keys:${redis_keys}"
+    else
+        printf "  %-28s ${RED}%-8s${NC} %-8s %s\n" "redis" "未运行" "-" ""
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# ── heartbeat: 通过 Redis 查看 Agent 心跳 ────────
+cmd_heartbeat() {
+    if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+        echo -e "${RED}Redis 未运行${NC}"
+        return 1
+    fi
+
+    echo ""
+    echo -e "${BOLD}Agent 心跳状态 (Redis)${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local keys=$(redis-cli hkeys openclaw:heartbeats 2>/dev/null)
+    if [ -z "$keys" ]; then
+        echo "  (无心跳数据 — Agent 可能尚未启动)"
+    else
+        local now=$(date +%s)
+        for key in $keys; do
+            local val=$(redis-cli hget openclaw:heartbeats "$key" 2>/dev/null)
+            local ts=$(echo "$val" | python3 -c "import sys,json; print(int(json.load(sys.stdin).get('ts',0)))" 2>/dev/null || echo 0)
+            local pid=$(echo "$val" | python3 -c "import sys,json; print(json.load(sys.stdin).get('pid','?'))" 2>/dev/null || echo "?")
+            local skills=$(echo "$val" | python3 -c "import sys,json; s=json.load(sys.stdin).get('skills',[]); print(', '.join(s) if s else '-')" 2>/dev/null || echo "-")
+            local has_soul=$(echo "$val" | python3 -c "import sys,json; print('✓' if json.load(sys.stdin).get('has_soul') else '✗')" 2>/dev/null || echo "?")
+            local age=$((now - ts))
+
+            if [ "$age" -lt 30 ]; then
+                local status="${GREEN}在线${NC}"
+            elif [ "$age" -lt 120 ]; then
+                local status="${YELLOW}延迟 ${age}s${NC}"
+            else
+                local status="${RED}离线 ${age}s${NC}"
+            fi
+
+            printf "  %-16s %b  pid:%-6s soul:%s  skills:[%s]\n" "${key}" "${status}" "${pid}" "${has_soul}" "${skills}"
+        done
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# ── logs: 查看某个 Agent 日志 ─────────────────────
+cmd_logs() {
+    local agent="${1:-orchestrator}"
+    local lines="${2:-50}"
+    local log_file="${LOGS_DIR}/${agent}.log"
+    local err_file="${LOGS_DIR}/${agent}.err"
+
+    if [ ! -f "$log_file" ] && [ ! -f "$err_file" ]; then
+        echo -e "${RED}日志文件不存在: ${log_file}${NC}"
+        echo "可用日志: $(ls ${LOGS_DIR}/*.log 2>/dev/null | xargs -I{} basename {} .log | tr '\n' ' ')"
+        return 1
+    fi
+
+    echo -e "${BOLD}=== ${agent} stdout (最近 ${lines} 行) ===${NC}"
+    tail -n ${lines} "${log_file}" 2>/dev/null || echo "(空)"
+    echo ""
+    echo -e "${BOLD}=== ${agent} stderr (最近 20 行) ===${NC}"
+    tail -n 20 "${err_file}" 2>/dev/null || echo "(空)"
+}
+
+# ── follow: 实时跟踪某个 Agent 日志 ──────────────
+cmd_follow() {
+    local agent="${1:-orchestrator}"
+    local log_file="${LOGS_DIR}/${agent}.log"
+    echo -e "${CYAN}实时跟踪 ${agent} 日志 (Ctrl+C 退出)${NC}"
+    tail -f "${log_file}" "${LOGS_DIR}/${agent}.err" 2>/dev/null
+}
+
+# ── restart: 重启某个/全部 Agent ──────────────────
+cmd_restart() {
+    local uid=$(get_uid)
+    local target="${1:-all}"
+
+    if [ "$target" = "all" ]; then
+        echo -e "${CYAN}重启全部 Agent...${NC}"
+        for agent in "${AGENTS[@]}"; do
+            local label="com.openclaw.${agent}"
+            if [ -f "${LA_DIR}/${label}.plist" ]; then
+                sudo launchctl kickstart -k gui/${uid}/${label} 2>/dev/null && \
+                    echo -e "  ${GREEN}✓${NC} ${agent}" || \
+                    echo -e "  ${YELLOW}⚠${NC} ${agent} (可能未安装)"
+            fi
+        done
+    else
+        local label="com.openclaw.${target}"
+        if [ -f "${LA_DIR}/${label}.plist" ]; then
+            echo -e "${CYAN}重启 ${target}...${NC}"
+            sudo launchctl kickstart -k gui/${uid}/${label}
+            echo -e "${GREEN}✓ ${target} 已重启${NC}"
+        else
+            echo -e "${RED}✗ ${target} 未安装 (${LA_DIR}/${label}.plist 不存在)${NC}"
+        fi
+    fi
+}
+
+# ── stop: 停止某个/全部 Agent ─────────────────────
+cmd_stop() {
+    local uid=$(get_uid)
+    local target="${1:-all}"
+
+    if [ "$target" = "all" ]; then
+        echo -e "${CYAN}停止全部 Agent...${NC}"
+        for agent in "${AGENTS[@]}"; do
+            local label="com.openclaw.${agent}"
+            sudo launchctl bootout gui/${uid}/${label} 2>/dev/null && \
+                echo -e "  ${GREEN}✓${NC} ${agent} 已停止" || \
+                echo -e "  ${DIM}  ${agent} (未运行)${NC}"
+        done
+    else
+        local label="com.openclaw.${target}"
+        echo -e "${CYAN}停止 ${target}...${NC}"
+        sudo launchctl bootout gui/${uid}/${label} 2>/dev/null && \
+            echo -e "${GREEN}✓ ${target} 已停止${NC}" || \
+            echo -e "${YELLOW}${target} 未运行${NC}"
+    fi
+}
+
+# ── start: 启动某个/全部 Agent ────────────────────
+cmd_start() {
+    local uid=$(get_uid)
+    local target="${1:-all}"
+
+    if [ "$target" = "all" ]; then
+        echo -e "${CYAN}启动全部 Agent...${NC}"
+        for agent in "${AGENTS[@]}"; do
+            local label="com.openclaw.${agent}"
+            local plist="${LA_DIR}/${label}.plist"
+            if [ -f "${plist}" ]; then
+                sudo launchctl bootstrap gui/${uid} "${plist}" 2>/dev/null && \
+                    echo -e "  ${GREEN}✓${NC} ${agent}" || \
+                    echo -e "  ${YELLOW}⚠${NC} ${agent} (已在运行或加载失败)"
+            fi
+        done
+    else
+        local label="com.openclaw.${target}"
+        local plist="${LA_DIR}/${label}.plist"
+        if [ -f "${plist}" ]; then
+            echo -e "${CYAN}启动 ${target}...${NC}"
+            sudo launchctl bootstrap gui/${uid} "${plist}" 2>/dev/null && \
+                echo -e "${GREEN}✓ ${target} 已启动${NC}" || \
+                echo -e "${YELLOW}${target} 已在运行${NC}"
+        else
+            echo -e "${RED}✗ plist 不存在: ${plist}${NC}"
+        fi
+    fi
+}
+
+# ── install: 一键安装 ─────────────────────────────
+cmd_install() {
+    echo -e "${CYAN}运行安装脚本...${NC}"
+    sudo bash "${DEPLOY_DIR}/install-agents.sh"
+}
+
+# ── deploy: 热更新代码（不重启） ─────────────────
+cmd_deploy() {
+    echo -e "${CYAN}同步最新代码到 ${OPENCLAW_DIR}...${NC}"
+    sudo cp "${DEPLOY_DIR}/agents/"*.py "${OPENCLAW_DIR}/agents/"
+    sudo cp "${DEPLOY_DIR}/agents/souls/"*.md "${OPENCLAW_DIR}/agents/souls/" 2>/dev/null || true
+    sudo cp "${DEPLOY_DIR}/agents/skills/"*.yaml "${OPENCLAW_DIR}/agents/skills/" 2>/dev/null || true
+    sudo cp "${DEPLOY_DIR}/telegram_bot.py" "${OPENCLAW_DIR}/"
+    sudo cp "${DEPLOY_DIR}/webchat_agent.py" "${OPENCLAW_DIR}/"
+    sudo cp "${DEPLOY_DIR}/rules.yaml" "${OPENCLAW_DIR}/"
+    sudo chown -R ${CLAW_USER}:staff "${OPENCLAW_DIR}"
+    echo -e "${GREEN}✓ 代码已同步${NC}"
+    echo -e "${DIM}  提示: 运行 'oclaw restart all' 使变更生效${NC}"
+}
+
+# ── redis: Redis 管理 ────────────────────────────
+cmd_redis() {
+    local action="${1:-status}"
+    case "$action" in
+        status)
+            if redis-cli ping 2>/dev/null | grep -q PONG; then
+                echo -e "${GREEN}Redis 运行中${NC}"
+                redis-cli info server 2>/dev/null | grep -E "redis_version|uptime_in_seconds|connected_clients"
+                echo "---"
+                redis-cli info memory 2>/dev/null | grep -E "used_memory_human|used_memory_peak_human"
+                echo "---"
+                echo "OpenClaw keys:"
+                redis-cli keys "openclaw:*" 2>/dev/null
+            else
+                echo -e "${RED}Redis 未运行${NC}"
+            fi
+            ;;
+        start)
+            brew services start redis
+            ;;
+        stop)
+            brew services stop redis
+            ;;
+        flush)
+            echo -e "${YELLOW}清除所有 OpenClaw Redis 数据...${NC}"
+            redis-cli keys "openclaw:*" 2>/dev/null | xargs -I{} redis-cli del {} 2>/dev/null
+            echo -e "${GREEN}✓ 已清除${NC}"
+            ;;
+        monitor)
+            echo -e "${CYAN}Redis 实时消息监控 (Ctrl+C 退出)${NC}"
+            redis-cli monitor 2>/dev/null | grep --line-buffered "openclaw"
+            ;;
+        *)
+            echo "用法: oclaw redis {status|start|stop|flush|monitor}"
+            ;;
+    esac
+}
+
+# ── test: 测试某个 Agent 是否正常响应 ────────────
+cmd_test() {
+    local agent="${1:-market}"
+    local action="${2:-get_summary}"
+
+    if ! redis-cli ping 2>/dev/null | grep -q PONG; then
+        echo -e "${RED}Redis 未运行，无法测试${NC}"
+        return 1
+    fi
+
+    echo -e "${CYAN}测试 ${agent}.${action}...${NC}"
+
+    local msg_id=$(python3 -c "import uuid; print(uuid.uuid4().hex[:12])")
+    local reply_ch="openclaw:test:${msg_id}"
+    local msg=$(python3 -c "
+import json, time
+print(json.dumps({
+    'id': '${msg_id}',
+    'sender': 'test',
+    'target': '${agent}',
+    'action': '${action}',
+    'params': {},
+    'timestamp': time.time()
+}))
+")
+
+    redis-cli subscribe "${reply_ch}" &
+    local sub_pid=$!
+    sleep 0.5
+
+    redis-cli publish "openclaw:${agent}" "${msg}" > /dev/null
+
+    sleep 5
+    kill $sub_pid 2>/dev/null
+    echo ""
+    echo -e "${DIM}(等待5秒后结束)${NC}"
+}
+
+# ── souls: 查看各 Agent 的 SOUL 摘要 ─────────────
+cmd_souls() {
+    echo ""
+    echo -e "${BOLD}OpenClaw Agent SOUL 概览${NC}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    for soul_file in "${DEPLOY_DIR}/agents/souls/"*.md; do
+        local name=$(basename "$soul_file" .md)
+        local title=$(head -1 "$soul_file" | sed 's/^# //')
+        local size=$(wc -c < "$soul_file" | tr -d ' ')
+        local skills_file="${DEPLOY_DIR}/agents/skills/${name}_skills.yaml"
+        local skill_count=0
+        if [ -f "$skills_file" ]; then
+            skill_count=$(grep -c "^  - name:" "$skills_file" 2>/dev/null || echo 0)
+        fi
+        printf "  %-16s %-35s ${DIM}%sB  %s skills${NC}\n" "${name}" "${title}" "${size}" "${skill_count}"
+    done
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
+# ── help ──────────────────────────────────────────
+cmd_help() {
+    echo ""
+    echo -e "${BOLD}oclaw${NC} — OpenClaw Multi-Agent 运维管理工具"
+    echo ""
+    echo -e "${BOLD}查看状态:${NC}"
+    echo "  oclaw status              全部服务运行状态 (进程/PID/内存/CPU)"
+    echo "  oclaw heartbeat           Agent 心跳详情 (Redis 实时数据)"
+    echo "  oclaw souls               各 Agent 的 SOUL 和技能概览"
+    echo ""
+    echo -e "${BOLD}日志:${NC}"
+    echo "  oclaw logs <agent> [行数]  查看 Agent 日志 (默认 orchestrator, 50行)"
+    echo "  oclaw follow <agent>       实时跟踪 Agent 日志"
+    echo ""
+    echo -e "${BOLD}服务管理:${NC}"
+    echo "  oclaw start [agent|all]    启动服务"
+    echo "  oclaw stop [agent|all]     停止服务"
+    echo "  oclaw restart [agent|all]  重启服务"
+    echo ""
+    echo -e "${BOLD}部署:${NC}"
+    echo "  oclaw install              首次完整安装 (Redis + 依赖 + 全部服务)"
+    echo "  oclaw deploy               热更新代码 (同步文件, 需手动 restart)"
+    echo ""
+    echo -e "${BOLD}Redis:${NC}"
+    echo "  oclaw redis status         Redis 状态和 OpenClaw keys"
+    echo "  oclaw redis start/stop     启动/停止 Redis"
+    echo "  oclaw redis flush          清除 OpenClaw 数据"
+    echo "  oclaw redis monitor        实时查看 Redis 消息流"
+    echo ""
+    echo -e "${BOLD}测试:${NC}"
+    echo "  oclaw test <agent> [action]  发送测试消息到 Agent"
+    echo ""
+    echo -e "${BOLD}Agent 名称:${NC}"
+    echo "  orchestrator, market-agent, analysis-agent, dev-agent,"
+    echo "  browser-agent, desktop-agent, news-agent, telegram-bot, webchat"
+    echo ""
+    echo -e "${BOLD}示例:${NC}"
+    echo "  oclaw status                     # 查看全局状态"
+    echo "  oclaw logs market-agent 100      # 看 MarketAgent 最近 100 行日志"
+    echo "  oclaw follow analysis-agent      # 实时跟踪 AnalysisAgent"
+    echo "  oclaw restart market-agent       # 重启 MarketAgent"
+    echo "  oclaw restart all                # 重启全部"
+    echo "  oclaw redis monitor              # 看 Redis 消息实时流"
+    echo "  oclaw test market get_summary    # 测试 MarketAgent"
+    echo ""
+}
+
+# ── 入口 ──────────────────────────────────────────
+case "${1:-help}" in
+    status)     cmd_status ;;
+    heartbeat|hb) cmd_heartbeat ;;
+    logs|log)   cmd_logs "${2}" "${3}" ;;
+    follow|f)   cmd_follow "${2}" ;;
+    restart)    cmd_restart "${2}" ;;
+    stop)       cmd_stop "${2}" ;;
+    start)      cmd_start "${2}" ;;
+    install)    cmd_install ;;
+    deploy)     cmd_deploy ;;
+    redis)      cmd_redis "${2}" ;;
+    test)       cmd_test "${2}" "${3}" ;;
+    souls)      cmd_souls ;;
+    help|--help|-h) cmd_help ;;
+    *)
+        echo -e "${RED}未知命令: ${1}${NC}"
+        cmd_help
+        exit 1
+        ;;
+esac

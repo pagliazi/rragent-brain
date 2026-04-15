@@ -1,0 +1,78 @@
+agent: backtest
+version: "2.0"
+description: "量化回测沙箱引擎 — 策略执行+质量验证+过拟合检测 (集成 quantitative-research)"
+requires_llm: false
+execution:
+  primary: "Bridge API (POST /api/bridge/backtest/run/)"
+  fallback_1: "SSH → quant_runner@192.168.1.139 远程沙箱"
+  fallback_2: "本地 subprocess"
+
+skills:
+  - name: run_backtest
+    description: "执行策略回测 — 自动附带量化质量检查"
+    params:
+      code: { type: string, required: true, desc: "策略 Python 代码" }
+      stocks: { type: string, default: "000001", desc: "股票代码（逗号分隔多票）" }
+      start_date: { type: string, default: "2024-01-01", desc: "回测起始日" }
+      end_date: { type: string, default: "today", desc: "回测结束日" }
+      mode: { type: string, default: "backtrader", desc: "backtrader | vectorbt" }
+      strategy_params: { type: object, required: false, desc: "策略参数覆盖" }
+    returns:
+      status: "success | error | timeout"
+      metrics: "cagr, max_drawdown, sharpe, win_rate, trades"
+      quant_validation: "质量评级 + 过拟合风险 + 改进建议"
+
+  - name: validate_code
+    description: "代码安全性+语法校验（不执行）"
+    params:
+      code: { type: string, required: true, desc: "待校验代码" }
+    returns:
+      safe: "安全检查是否通过"
+      syntax_ok: "语法是否正确"
+
+  - name: quant_validate
+    description: "量化研究质量验证 — 对已有回测指标进行深度审计 (quantitative-research skill)"
+    trigger: "/qv 或 /quant_validate"
+    params:
+      metrics: { type: object, required: true, desc: "回测指标 {cagr, max_drawdown, sharpe, win_rate, trades}" }
+      code: { type: string, required: false, desc: "策略代码（用于过拟合信号检测）" }
+      start_date: { type: string, required: false, desc: "回测起始日" }
+      end_date: { type: string, required: false, desc: "回测结束日" }
+    returns:
+      grade: "A/B/C/D 质量评级"
+      risk_score: "过拟合风险分 (0-10)"
+      warnings: "具体风险警告列表"
+      recommendations: "改进建议列表"
+
+  - name: list_cache
+    description: "查看 Bridge 数据缓存或本地缓存列表"
+
+  - name: save_ledger
+    description: "保存回测结果到决策账本 (Bridge + 本地 Markdown)"
+    params:
+      title: { type: string, required: true, desc: "策略标题" }
+      code: { type: string, required: true, desc: "策略代码" }
+      metrics: { type: object, required: true, desc: "回测指标" }
+      notes: { type: string, required: false, desc: "策略备注" }
+
+  - name: list_ledger
+    description: "查看决策账本列表"
+
+  - name: list_strategies
+    description: "查看 Bridge 策略预设库"
+
+  - name: get_strategy
+    description: "获取指定策略预设详情"
+    params:
+      id: { type: string, required: true, desc: "策略ID或slug" }
+
+quality_framework:
+  source: "quantitative-research skill (zhengxinjipai)"
+  checks:
+    - "Sharpe >3 过拟合警告"
+    - "交易次数 <30 统计不显著"
+    - "回测周期 <1年 不充分"
+    - "Calmar ratio 风险评估"
+    - "代码魔术数字/条件分支过拟合检测"
+    - "前视偏差 (look-ahead bias) 提示"
+  grades: "A(健康) B(基本合理) C(需验证) D(高风险)"

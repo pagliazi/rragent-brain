@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OpenClaw</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script>
+tailwindcss.config={darkMode:'class',theme:{extend:{
+  fontFamily:{sans:['Inter','-apple-system','BlinkMacSystemFont','system-ui','sans-serif']},
+  colors:{
+    brand:{50:'#eef2ff',100:'#e0e7ff',400:'#818cf8',500:'#6366f1',600:'#4f46e5',700:'#4338ca',800:'#3730a3'},
+    surface:{0:'#09090b',1:'#0f0f14',2:'#16161d',3:'#1e1e28',4:'#282833',5:'#33333f'},
+    border:{DEFAULT:'#1e1e28',light:'#282833',lighter:'#33333f'},
+    accent:{blue:'#3b82f6',emerald:'#10b981',amber:'#f59e0b',rose:'#f43f5e',purple:'#a855f7',cyan:'#06b6d4',orange:'#f97316',teal:'#14b8a6',pink:'#ec4899'},
+  },
+  animation:{
+    'fade-in':'fadeIn .35s cubic-bezier(.4,0,.2,1)',
+    'slide-up':'slideUp .3s cubic-bezier(.4,0,.2,1)',
+    'slide-right':'slideRight .3s cubic-bezier(.4,0,.2,1)',
+    'slide-left':'slideLeft .3s cubic-bezier(.4,0,.2,1)',
+    'slide-down':'slideDown .3s cubic-bezier(.4,0,.2,1)',
+    'pulse-slow':'pulse 3s ease-in-out infinite',
+    'bounce-in':'bounceIn .4s cubic-bezier(.68,-.55,.27,1.55)',
+    'scale-in':'scaleIn .25s cubic-bezier(.4,0,.2,1)',
+    'shimmer-fast':'shimmerFast 1.5s ease-in-out infinite',
+    'glow-pulse':'glowPulse 2s ease-in-out infinite',
+    'toast-in':'toastIn .35s cubic-bezier(.21,1.02,.73,1)',
+    'toast-out':'toastOut .25s ease-in forwards',
+  },
+  keyframes:{
+    fadeIn:{from:{opacity:'0'},to:{opacity:'1'}},
+    slideUp:{from:{opacity:'0',transform:'translateY(12px)'},to:{opacity:'1',transform:'translateY(0)'}},
+    slideDown:{from:{opacity:'0',transform:'translateY(-12px)'},to:{opacity:'1',transform:'translateY(0)'}},
+    slideRight:{from:{opacity:'0',transform:'translateX(-12px)'},to:{opacity:'1',transform:'translateX(0)'}},
+    slideLeft:{from:{opacity:'0',transform:'translateX(12px)'},to:{opacity:'1',transform:'translateX(0)'}},
+    bounceIn:{from:{opacity:'0',transform:'scale(.92)'},to:{opacity:'1',transform:'scale(1)'}},
+    scaleIn:{from:{opacity:'0',transform:'scale(.95)'},to:{opacity:'1',transform:'scale(1)'}},
+    shimmerFast:{
+      '0%':{backgroundPosition:'-200% 0'},
+      '100%':{backgroundPosition:'200% 0'},
+    },
+    glowPulse:{
+      '0%,100%':{boxShadow:'0 0 8px rgba(99,102,241,.15)'},
+      '50%':{boxShadow:'0 0 20px rgba(99,102,241,.3)'},
+    },
+    toastIn:{from:{opacity:'0',transform:'translateX(100%) scale(.95)'},to:{opacity:'1',transform:'translateX(0) scale(1)'}},
+    toastOut:{from:{opacity:'1',transform:'translateX(0)'},to:{opacity:'0',transform:'translateX(100%)'}},
+  },
+}}}
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#09090b;color:#e4e4e7;overflow:hidden;height:100vh;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+::-webkit-scrollbar{width:5px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#282833;border-radius:6px}::-webkit-scrollbar-thumb:hover{background:#3f3f4a}
+textarea{resize:none}
+pre{white-space:pre-wrap;word-break:break-word;font-family:'SF Mono','Fira Code','JetBrains Mono',monospace}
+.btn{position:relative;overflow:hidden;transition:all .2s cubic-bezier(.4,0,.2,1)}
+.btn:active{transform:scale(.97)}
+@keyframes typing{0%,60%,100%{opacity:.3}30%{opacity:1}}
+.typing-dot{animation:typing 1.4s infinite both}
+.typing-dot:nth-child(2){animation-delay:.2s}
+.typing-dot:nth-child(3){animation-delay:.4s}
+@keyframes shimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+.skeleton{background:linear-gradient(90deg,#16161d 25%,#1e1e28 50%,#16161d 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
+.glass{background:rgba(15,15,20,.75);backdrop-filter:blur(20px) saturate(1.2);-webkit-backdrop-filter:blur(20px) saturate(1.2);border:1px solid rgba(255,255,255,.04)}
+.glow-brand{box-shadow:0 0 30px rgba(99,102,241,.08),0 0 60px rgba(99,102,241,.04)}
+
+/* Nav items — n8n-style active indicator */
+.nav-item{transition:all .2s cubic-bezier(.4,0,.2,1);position:relative}
+.nav-item:hover{background:rgba(99,102,241,.08)}
+.nav-item.active{background:rgba(99,102,241,.12);color:#818cf8}
+.nav-item.active::before{content:'';position:absolute;left:0;top:50%;transform:translateY(-50%);width:3px;height:60%;background:linear-gradient(180deg,#818cf8,#6366f1);border-radius:0 3px 3px 0}
+
+/* Card hover elevation */
+.card-hover{transition:all .25s cubic-bezier(.4,0,.2,1)}
+.card-hover:hover{border-color:rgba(99,102,241,.2);box-shadow:0 4px 24px rgba(0,0,0,.3),0 0 0 1px rgba(99,102,241,.08);transform:translateY(-1px)}
+
+/* Gradient border accent */
+.gradient-border{position:relative;overflow:hidden}
+.gradient-border::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(99,102,241,.3),transparent)}
+
+/* Chat styles */
+.chat-bubble{transition:all .2s cubic-bezier(.4,0,.2,1)}
+.chat-sidebar-item{transition:all .15s cubic-bezier(.4,0,.2,1)}
+.chat-sidebar-item:hover{background:rgba(255,255,255,.04)}
+.chat-sidebar-item.active{background:rgba(99,102,241,.1)}
+
+/* Form controls — n8n-inspired */
+select{-webkit-appearance:none;appearance:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;padding-right:28px;transition:border-color .2s,box-shadow .2s}
+select:focus,input:focus,textarea:focus{outline:none;border-color:rgba(99,102,241,.5);box-shadow:0 0 0 3px rgba(99,102,241,.1)}
+
+/* View transition wrapper */
+.view-enter{animation:viewEnter .3s cubic-bezier(.4,0,.2,1)}
+@keyframes viewEnter{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+
+/* Subtle noise texture on surfaces */
+.surface-texture{background-image:url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.02'/%3E%3C/svg%3E")}
+
+/* Status pulse ring */
+.pulse-ring{position:relative}
+.pulse-ring::after{content:'';position:absolute;inset:-2px;border-radius:50%;border:1.5px solid currentColor;opacity:0;animation:pulseRing 2s ease-out infinite}
+@keyframes pulseRing{0%{opacity:.6;transform:scale(1)}100%{opacity:0;transform:scale(1.8)}}
+
+/* Tab indicator */
+.tab-active{position:relative}
+.tab-active::after{content:'';position:absolute;bottom:-1px;left:20%;right:20%;height:2px;background:linear-gradient(90deg,transparent,#6366f1,transparent);border-radius:2px}
+
+/* Splash screen */
+#splash{position:fixed;inset:0;z-index:9999;background:#09090b;display:flex;flex-direction:column;align-items:center;justify-content:center;transition:opacity .5s cubic-bezier(.4,0,.2,1)}
+#splash.fade-out{opacity:0;pointer-events:none;transform:scale(1.02)}
+#splash .logo{width:60px;height:60px;border-radius:18px;background:linear-gradient(135deg,rgba(99,102,241,.2),rgba(129,140,248,.1));border:1px solid rgba(99,102,241,.25);display:flex;align-items:center;justify-content:center;margin-bottom:20px;box-shadow:0 8px 32px rgba(99,102,241,.12),0 0 0 1px rgba(99,102,241,.08);animation:pulse-logo 2s ease-in-out infinite}
+@keyframes pulse-logo{0%,100%{box-shadow:0 8px 32px rgba(99,102,241,.12),0 0 0 1px rgba(99,102,241,.08)}50%{box-shadow:0 8px 48px rgba(99,102,241,.25),0 0 0 1px rgba(99,102,241,.15)}}
+#splash .bar-track{width:200px;height:3px;background:#16161d;border-radius:4px;overflow:hidden;margin-top:14px}
+#splash .bar-fill{height:100%;width:0%;background:linear-gradient(90deg,#4f46e5,#818cf8,#6366f1);background-size:200% 100%;border-radius:4px;transition:width .4s cubic-bezier(.4,0,.2,1);animation:shimmer 2s ease-in-out infinite}
+#splash .label{font-size:11px;color:#52525b;margin-top:10px;letter-spacing:.5px;transition:color .3s}
+</style>
+</head>
+<body>
+
+<!-- Splash preload screen -->
+<div id="splash">
+  <div class="logo"><span style="font-size:28px">🦀</span></div>
+  <div style="font-size:16px;font-weight:700;color:#e4e4e7;letter-spacing:-.3px">OpenClaw</div>
+  <div style="font-size:11px;color:#52525b;margin-top:4px">多智能体协作平台</div>
+  <div class="bar-track"><div class="bar-fill" id="splash-bar"></div></div>
+  <div class="label" id="splash-label">正在加载核心模块...</div>
+</div>
+
+<div id="root"></div>
+
+<script>
+// Splash progress helper
+var _sp = {bar: document.getElementById('splash-bar'), label: document.getElementById('splash-label'), total: 9, loaded: 0};
+function splashProgress(name) {
+  _sp.loaded++;
+  var pct = Math.round((_sp.loaded / _sp.total) * 100);
+  _sp.bar.style.width = pct + '%';
+  _sp.label.textContent = name;
+}
+function splashDone() {
+  _sp.bar.style.width = '100%';
+  _sp.label.textContent = '就绪';
+  setTimeout(function(){ document.getElementById('splash').classList.add('fade-out'); }, 200);
+  setTimeout(function(){ var s = document.getElementById('splash'); if(s) s.remove(); }, 600);
+}
+// After all babel scripts are processed, Babel standalone calls them in order.
+// We hook into each file's load completion via the onload-style tracking below.
+</script>
+
+<!-- Module scripts loaded in dependency order by Babel standalone -->
+<script type="text/babel" src="/static/js/01-core.jsx" data-plugins=""></script>
+<script type="text/babel">splashProgress('核心模块');</script>
+
+<script type="text/babel" src="/static/js/02-nav.jsx"></script>
+<script type="text/babel">splashProgress('导航组件');</script>
+
+<script type="text/babel" src="/static/js/03-dashboard.jsx"></script>
+<script type="text/babel">splashProgress('概览面板');</script>
+
+<script type="text/babel" src="/static/js/04-chat.jsx"></script>
+<script type="text/babel">splashProgress('对话系统');</script>
+
+<script type="text/babel" src="/static/js/05-market.jsx"></script>
+<script type="text/babel">splashProgress('行情模块');</script>
+
+<script type="text/babel" src="/static/js/06-quant.jsx"></script>
+<script type="text/babel">splashProgress('量化引擎');</script>
+
+<script type="text/babel" src="/static/js/07-tools.jsx"></script>
+<script type="text/babel">splashProgress('工具集成');</script>
+
+<script type="text/babel" src="/static/js/08-system.jsx"></script>
+<script type="text/babel">splashProgress('系统管理');</script>
+
+<script type="text/babel" src="/static/js/10-autoresearch.jsx"></script>
+<script type="text/babel" src="/static/js/09-app.jsx"></script>
+<script type="text/babel">splashProgress('应用就绪'); splashDone();</script>
+
+</body>
+</html>

@@ -1,0 +1,211 @@
+{
+  "name": "rragents - 系统健康监控 + selfimprove",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 */1 * * *"
+            }
+          ]
+        }
+      },
+      "id": "poll-trigger",
+      "name": "每小时检查",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "http://127.0.0.1:7789/api/n8n/system/health",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-N8n-Token",
+              "value": "openclaw-n8n-2026"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "get-health",
+      "name": "1. 全面健康检查",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const data = $input.first().json;\nconst services = data.services || {};\nconst channels = data.channels || {};\nconst stats = data.factor_stats || {};\nconst events = data.recent_events || [];\n\nconst alerts = [];\nconst warnings = [];\nconst info = [];\n\n// 服务状态\nconst downServices = Object.entries(services).filter(([k, v]) => !v.running).map(([k]) => k);\nif (downServices.length > 0) {\n  alerts.push(`❌ 服务宕机: ${downServices.join(', ')}`);\n}\nconst upServices = Object.entries(services).filter(([k, v]) => v.running).map(([k]) => k);\ninfo.push(`🟢 运行中: ${upServices.join(', ')}`);\n\n// Redis\nif (!data.redis) {\n  alerts.push('❌ Redis 连接失败');\n}\n\n// 渠道心跳\nconst offlineChannels = Object.entries(channels).filter(([k, v]) => !v.online).map(([k]) => k);\nif (offlineChannels.length > 0) {\n  warnings.push(`⚠️ 渠道离线: ${offlineChannels.join(', ')}`);\n}\n\n// SOUL 完整性\nif (!data.soul_ok) {\n  alerts.push('❌ SOUL 数据缺失或损坏');\n}\n\n// 因子库\nconst count = stats.active_count || 0;\nif (count < 20) {\n  warnings.push(`⚠️ 因子库偏少: ${count} (目标 > 50)`);\n} else {\n  info.push(`📦 因子库: ${count} 个活跃因子`);\n}\n\n// 质量\nif (stats.avg_sharpe && stats.avg_sharpe < 0.8) {\n  warnings.push(`⚠️ 平均 Sharpe 偏低: ${stats.avg_sharpe.toFixed(3)}`);\n} else {\n  info.push(`📊 平均 Sharpe: ${(stats.avg_sharpe || 0).toFixed(3)}`);\n}\ninfo.push(`🏆 最佳 Sharpe: ${(stats.best_sharpe || 0).toFixed(3)}`);\n\n// 记忆实体\ninfo.push(`🧠 记忆实体: ${data.memory_entities || 0}`);\n\n// ReflectionEngine 洞察\nconst insight = data.reflection_insight;\nif (insight && insight !== '📊 今日暂无查询数据') {\n  info.push(`\\n${insight}`);\n}\n\n// 失败率高的 Agent\nconst failingAgents = data.failing_agents || [];\nif (failingAgents.length > 0) {\n  warnings.push(`⚠️ Agent 失败率过高: ${failingAgents.join(', ')}`);\n}\n\n// selfimprove 建议\nconst needsSelfimprove = data.needs_selfimprove;\nconst reasons = data.selfimprove_reasons || [];\nif (reasons.length > 0) {\n  warnings.push(`\\n🔧 selfimprove 建议:\\n  ${reasons.join('\\n  ')}`);\n}\n\nconst hasAlerts = alerts.length > 0;\nconst hasWarnings = warnings.length > 0;\n\nlet emoji = '🟢';\nif (hasAlerts) emoji = '🔴';\nelse if (hasWarnings) emoji = '🟡';\n\nlet msg = `${emoji} rragents 系统状态 ${new Date().toLocaleString()}\\n`;\nmsg += `━━━━━━━━━━━━━━━━━━\\n`;\nif (alerts.length) msg += alerts.join('\\n') + '\\n\\n';\nif (warnings.length) msg += warnings.join('\\n') + '\\n\\n';\nmsg += info.join('\\n');\n\nreturn [{json: {\n  hasAlerts, hasWarnings, needsSelfimprove,\n  alertCount: alerts.length, warningCount: warnings.length,\n  message: msg\n}}];"
+      },
+      "id": "analyze",
+      "name": "2. 健康分析",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "combinator": "or",
+          "conditions": [
+            {
+              "id": "has-alerts",
+              "leftValue": "={{ $json.hasAlerts }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            },
+            {
+              "id": "has-warnings",
+              "leftValue": "={{ $json.hasWarnings }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ]
+        }
+      },
+      "id": "if-notify",
+      "name": "需要通知?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.telegram.org/bot8475104830:AAHY4_R7rBx3ymG1L-586t5iJRNr2AqikHo/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ '{\"chat_id\":\"-1003731324560\",\"message_thread_id\":7,\"text\":' + JSON.stringify($json.message) + ',\"parse_mode\":\"HTML\"}' }}"
+      },
+      "id": "tg-alert",
+      "name": "→ TG 告警",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://open.feishu.cn/open-apis/bot/v2/hook/2a2df595-8b4e-4d2d-8264-4916b928258f",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({msg_type: 'text', content: {text: $json.message}}) }}"
+      },
+      "id": "feishu-alert",
+      "name": "→ 飞书告警",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "每小时检查": {
+      "main": [
+        [
+          {
+            "node": "1. 全面健康检查",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1. 全面健康检查": {
+      "main": [
+        [
+          {
+            "node": "2. 健康分析",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "2. 健康分析": {
+      "main": [
+        [
+          {
+            "node": "需要通知?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "需要通知?": {
+      "main": [
+        [
+          {
+            "node": "→ TG 告警",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "→ 飞书告警",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
