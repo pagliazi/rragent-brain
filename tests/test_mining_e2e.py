@@ -23,6 +23,8 @@ import os
 import sys
 import time
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 os.environ.setdefault("NO_PROXY", "127.0.0.1,localhost")
 
@@ -59,6 +61,7 @@ def test_static():
     ok("_normalize_mining_metrics 存在",  hasattr(BridgeClient, "_normalize_mining_metrics"))
 
 
+@pytest.mark.live
 async def test_schema():
     print("\n═══ 2. API Schema 验证 ═══")
     try:
@@ -90,6 +93,7 @@ async def test_schema():
         skip("API Schema", f"连接失败: {e}")
 
 
+@pytest.mark.live
 async def test_live_call():
     print("\n═══ 3. 真实 API 调用 ═══")
     b = BridgeClient(base_url=BRIDGE_URL, secret="")
@@ -123,6 +127,7 @@ async def test_live_call():
     return resp
 
 
+@pytest.mark.live
 async def test_field_mapping(resp: dict):
     print("\n═══ 4. 字段标准化验证 ═══")
     m = resp.get("metrics", {})
@@ -141,6 +146,7 @@ async def test_field_mapping(resp: dict):
     ok("保留原始 total_trades",  m.get("total_trades") is not None)
 
 
+@pytest.mark.live
 async def test_admission(resp: dict):
     print("\n═══ 5. 入库检查模拟 ═══")
     m = resp.get("metrics", {})

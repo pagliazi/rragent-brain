@@ -2,6 +2,8 @@
 market_time — A股交易时段工具
 提供统一的时间上下文，供所有 Agent 在数据获取和分析时感知当前市场阶段。
 """
+from __future__ import annotations
+
 
 from datetime import datetime, time, date
 from enum import Enum

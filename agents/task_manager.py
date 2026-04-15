@@ -11,6 +11,8 @@ TaskManager — 长期任务编排 + 进度追踪
 每一步的执行结果和进度实时写入 Redis，
 进度变化时自动通过 NotifyRouter 推送到系统话题。
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

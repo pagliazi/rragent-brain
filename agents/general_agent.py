@@ -4,6 +4,8 @@ GeneralAgent — 通用智能助手
 数据源: LLM 云端推理 + 可选联网搜索(委托 BrowserAgent)
 记忆: 三层拓扑记忆（向量+图谱+时序）
 """
+from __future__ import annotations
+
 
 import logging
 import re as _re

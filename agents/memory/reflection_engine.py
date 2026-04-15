@@ -22,6 +22,8 @@
     ERRORS.md             — 非显而易见的错误记录
     FEATURE_REQUESTS.md   — 功能需求追踪
 """
+from __future__ import annotations
+
 
 import json
 import logging

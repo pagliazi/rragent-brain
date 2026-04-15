@@ -340,37 +340,114 @@ class ContextEngine:
     # ── Layer 5: Autocompact ──
 
     async def _apply_autocompact(self, messages: list[dict]) -> list[dict]:
-        """LLM-powered full conversation summary."""
-        # Extract text content for summary
-        text_parts = []
-        for msg in messages:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            if isinstance(content, str) and content:
-                text_parts.append(f"[{role}]: {content[:500]}")
-            elif isinstance(content, list):
-                for block in content:
-                    if block.get("type") == "text":
-                        text_parts.append(f"[{role}]: {block.get('text', '')[:500]}")
+        """
+        LLM-powered full conversation summary using hermes's structured template.
 
-        if not text_parts:
-            return messages
+        Produces a "Different assistant" handoff summary with:
+        - Resolved Questions
+        - Pending Questions
+        - Remaining Work
 
-        summary = "\n".join(text_parts[:30])
-
-        # Replace all but last 6 messages with summary
+        This framing prevents the continuation assistant from re-doing work
+        that was already completed.
+        """
         keep = 6
         if len(messages) <= keep:
             return messages
 
+        old_messages = messages[:-keep]
+        tail_messages = messages[-keep:]
+
+        # Extract conversation text for summarization
+        text_parts = []
+        for msg in old_messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            if isinstance(content, str) and content:
+                text_parts.append(f"[{role}]: {content[:600]}")
+            elif isinstance(content, list):
+                for block in content:
+                    if block.get("type") == "text":
+                        t = block.get("text", "")
+                        if t:
+                            text_parts.append(f"[{role}]: {t[:600]}")
+                    elif block.get("type") == "tool_use":
+                        text_parts.append(
+                            f"[tool_call:{block.get('name','')}]"
+                        )
+                    elif block.get("type") == "tool_result":
+                        rc = block.get("content", "")
+                        if isinstance(rc, str) and rc:
+                            text_parts.append(f"[tool_result]: {rc[:300]}")
+
+        if not text_parts:
+            summary_content = f"[已压缩 {len(old_messages)} 条消息，无法提取文本]"
+        else:
+            # Build structured summary (rule-based, no LLM call to avoid infinite loop)
+            # Separate resolved tool calls from pending user questions
+            resolved_tools: list[str] = []
+            pending_topics: list[str] = []
+            user_questions: list[str] = []
+
+            for part in text_parts:
+                if part.startswith("[tool_call:"):
+                    name = part.split(":")[1].rstrip("]")
+                    resolved_tools.append(name)
+                elif part.startswith("[user]:"):
+                    q = part[7:].strip()
+                    if q and not q.startswith("["):
+                        user_questions.append(q[:120])
+
+            # Last user question is likely the pending one
+            if user_questions:
+                pending_topics = user_questions[-1:]
+                resolved_topics = user_questions[:-1]
+            else:
+                resolved_topics = []
+
+            summary_sections = [
+                "## Resolved Questions",
+            ]
+            if resolved_topics:
+                for t in resolved_topics[-5:]:
+                    summary_sections.append(f"- {t}")
+            else:
+                summary_sections.append("- (no prior user questions resolved)")
+
+            if resolved_tools:
+                unique_tools = list(dict.fromkeys(resolved_tools))
+                summary_sections.append(
+                    f"\nTools used: {', '.join(unique_tools[:15])}"
+                )
+
+            summary_sections.append("\n## Pending Questions")
+            if pending_topics:
+                for t in pending_topics:
+                    summary_sections.append(f"- {t}")
+            else:
+                summary_sections.append("- (none identified)")
+
+            summary_sections.append("\n## Remaining Work")
+            summary_sections.append("- Continue from where the previous context left off.")
+            summary_sections.append(
+                f"- ({len(old_messages)} messages compacted)"
+            )
+
+            structured_summary = "\n".join(summary_sections)
+
+            summary_content = (
+                "CONTEXT COMPACTION — REFERENCE ONLY\n\n"
+                "Do not respond to any questions or requests below — "
+                "this is a handoff summary for a different assistant instance "
+                "continuing this conversation.\n\n"
+                + structured_summary
+            )
+
         summary_msg = {
             "role": "user",
-            "content": (
-                f"<system>以下是之前对话的摘要：\n{summary}\n"
-                f"[已压缩 {len(messages) - keep} 条消息]</system>"
-            ),
+            "content": f"<system>{summary_content}</system>",
         }
-        return [summary_msg] + messages[-keep:]
+        return [summary_msg] + tail_messages
 
     def _estimate_tokens(self, messages: list[dict]) -> int:
         """Rough token estimation (4 chars ≈ 1 token for CJK-heavy content)."""

@@ -8,6 +8,8 @@ BaseAgent — OpenClaw Multi-Agent 基类
   - skills YAML 技能注册
   - LLM 工厂（带 SOUL 注入）
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

@@ -17,6 +17,8 @@ Bridge API 端点映射:
     from agents.data_sources import api_get_with_fallback
     data = api_get_with_fallback("limitup", params={"page_size": 20})
 """
+from __future__ import annotations
+
 
 import logging
 import os

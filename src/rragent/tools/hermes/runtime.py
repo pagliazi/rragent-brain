@@ -58,7 +58,7 @@ class HermesNativeRuntime:
 
     def __init__(
         self,
-        hermes_path: str = "/tmp/full-deploy-test/hermes-venv",
+        hermes_path: str = "/Users/clawagent/hermes-agent",
         model: str = "anthropic/claude-sonnet-4-6",
         max_workers: int = 3,
     ):
@@ -110,26 +110,54 @@ class HermesNativeRuntime:
         return self._available
 
     def list_tools(self) -> list[dict]:
-        """List available Hermes tools (for ToolSearch index building)."""
+        """List available Hermes tools (for ToolSearch index building).
+
+        Hermes 0.9.0 removed agent/tool_registry.py — we enumerate tools
+        from the agent's toolset manifest instead, or fall back to a static
+        list of known hermes core tools.
+        """
         if not self._available:
             return []
 
+        # Try hermes 0.9.0 toolset manifest
         try:
-            from agent.tool_registry import ToolRegistry
-            registry = ToolRegistry()
-            return [
-                {
-                    "name": t.name,
-                    "description": t.description,
-                    "category": getattr(t, "category", "general"),
-                    "timeout": getattr(t, "timeout", 60),
-                    "is_read_only": getattr(t, "is_read_only", False),
-                }
-                for t in registry.list_tools()
-            ]
+            toolset_dir = self.hermes_path / "agent" / "toolsets"
+            if toolset_dir.exists():
+                import importlib.util
+                tools = []
+                for f in sorted(toolset_dir.glob("*.py")):
+                    if f.name.startswith("_"):
+                        continue
+                    spec = importlib.util.spec_from_file_location(f.stem, f)
+                    if spec and spec.loader:
+                        mod = importlib.util.module_from_spec(spec)
+                        spec.loader.exec_module(mod)  # type: ignore
+                        for attr in dir(mod):
+                            obj = getattr(mod, attr)
+                            if callable(obj) and hasattr(obj, "__tool_name__"):
+                                tools.append({
+                                    "name": obj.__tool_name__,
+                                    "description": getattr(obj, "__doc__", "") or "",
+                                    "category": f.stem,
+                                    "timeout": 60,
+                                    "is_read_only": False,
+                                })
+                if tools:
+                    return tools
         except Exception as e:
-            logger.warning(f"Failed to list Hermes tools: {e}")
-            return []
+            logger.debug(f"Toolset manifest enumeration failed: {e}")
+
+        # Static fallback — known hermes core tools
+        return [
+            {"name": "execute_code", "description": "Execute Python code via UDS PTC", "category": "core", "timeout": 120, "is_read_only": False},
+            {"name": "read_file", "description": "Read file contents", "category": "core", "timeout": 30, "is_read_only": True},
+            {"name": "write_file", "description": "Write file contents", "category": "core", "timeout": 30, "is_read_only": False},
+            {"name": "bash", "description": "Run shell commands", "category": "core", "timeout": 60, "is_read_only": False},
+            {"name": "web_search", "description": "Search the web", "category": "web", "timeout": 30, "is_read_only": True},
+            {"name": "save_memory", "description": "Save to persistent memory", "category": "memory", "timeout": 10, "is_read_only": False},
+            {"name": "recall_memory", "description": "Recall from persistent memory", "category": "memory", "timeout": 10, "is_read_only": True},
+            {"name": "create_skill", "description": "Create reusable skill", "category": "skills", "timeout": 30, "is_read_only": False},
+        ]
 
     async def run_task(
         self,

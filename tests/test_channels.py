@@ -14,6 +14,8 @@ import logging
 import sys
 import os
 
+import pytest
+
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -25,8 +27,8 @@ from rragent.runtime.session import Session
 from rragent.tools.base import Tool, ToolSpec, ToolResult
 from rragent.tools.registry import GlobalToolRegistry, ToolIndex
 from rragent.tools.executor import ToolExecutor
-from rragent.channels.gateway import GatewayChannel
-from rragent.channels.acp_runtime import ACPRuntime
+from gateway.gateway import GatewayChannel
+from gateway.acp_runtime import ACPRuntime
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
 logger = logging.getLogger("test_channels")
@@ -143,6 +145,7 @@ def create_test_server():
 # Test 1: IM Channel (Mock IM Gateway → GatewayChannel)
 # ══════════════════════════════════════════════════════════════
 
+@pytest.mark.live
 async def test_im_gateway():
     """
     Simulate Telegram message flow:

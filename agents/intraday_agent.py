@@ -11,6 +11,8 @@ IntradayAgent — 盘中实时监控 Agent
   盘后: vectorbt + ClickHouse 全市场回测 → Redis rragent:daily_pool
   盘中: DolphinDB 1.17亿行实时数据 → Bridge API intraday/scan → 信号推送
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

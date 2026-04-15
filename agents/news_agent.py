@@ -9,6 +9,8 @@ NewsAgent — 舆情监控 + 深度研究
 记忆: 三层拓扑记忆（向量+图谱+时序），temporal_next 连相邻天，same_topic 连同事件
 支持跨Agent记忆提醒 (remind) 注入
 """
+from __future__ import annotations
+
 
 import asyncio
 import logging

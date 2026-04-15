@@ -326,6 +326,12 @@ class ConversationRuntime:
         # ── 10. Persist session ──
         self.session.persist()
 
+        # ── 11. Save trajectory (ShareGPT JSONL for evolution/training) ──
+        try:
+            self._save_trajectory(completed=not self._skip_hooks)
+        except Exception as e:
+            logger.debug(f"Trajectory save failed (non-critical): {e}")
+
         yield TurnEvent.turn_complete()
 
     def _fallback_context(self) -> dict[str, Any]:
@@ -336,6 +342,92 @@ class ConversationRuntime:
             "tools": self.registry.get_all_active_schemas(),
             "model": os.getenv("RRAGENT_DEFAULT_MODEL", "qwen3.5-plus"),
         }
+
+    def _save_trajectory(self, completed: bool = True) -> None:
+        """
+        Save conversation trajectory as ShareGPT JSONL for evolution/training.
+
+        Files:
+          ~/.rragent/trajectories/trajectory_samples.jsonl  (successful)
+          ~/.rragent/trajectories/failed_trajectories.jsonl (failed/incomplete)
+
+        Format (one JSON object per line):
+          {
+            "conversations": [{"from": "human"|"gpt", "value": str}, ...],
+            "timestamp": float,
+            "model": str,
+            "session_id": str,
+            "completed": bool,
+            "tool_calls": int,
+          }
+        """
+        import json
+        from pathlib import Path
+
+        traj_dir = Path.home() / ".rragent" / "trajectories"
+        traj_dir.mkdir(parents=True, exist_ok=True)
+
+        filename = "trajectory_samples.jsonl" if completed else "failed_trajectories.jsonl"
+        traj_file = traj_dir / filename
+
+        # Build ShareGPT conversation list from session messages
+        conversations = []
+        for msg in self.session.to_api_messages():
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+
+            # Flatten content
+            if isinstance(content, list):
+                parts = []
+                for block in content:
+                    if block.get("type") == "text":
+                        parts.append(block.get("text", ""))
+                    elif block.get("type") == "tool_use":
+                        parts.append(
+                            f"[tool:{block.get('name','')}] "
+                            + json.dumps(block.get("input", {}), ensure_ascii=False)[:200]
+                        )
+                    elif block.get("type") == "tool_result":
+                        result_content = block.get("content", "")
+                        if isinstance(result_content, str):
+                            parts.append(f"[result] {result_content[:500]}")
+                text = "\n".join(p for p in parts if p)
+            else:
+                text = str(content)
+
+            if not text.strip():
+                continue
+
+            from_role = "human" if role == "user" else "gpt"
+            conversations.append({"from": from_role, "value": text})
+
+        if len(conversations) < 2:
+            return  # Not enough content to save
+
+        # Determine model used
+        model = os.getenv("RRAGENT_DEFAULT_MODEL", "unknown")
+        try:
+            last_usage = self.session.usage_history[-1] if self.session.usage_history else None
+            if last_usage and hasattr(last_usage, "model"):
+                model = last_usage.model
+        except Exception:
+            pass
+
+        record = {
+            "conversations": conversations,
+            "timestamp": time.time(),
+            "model": model,
+            "session_id": getattr(self.session, "session_id", ""),
+            "completed": completed,
+            "tool_calls": len(self._correction_tracker),
+        }
+
+        with open(traj_file, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+        logger.debug(
+            f"Trajectory saved: {len(conversations)} turns → {traj_file.name}"
+        )
 
     @property
     def corrections(self) -> list[dict]:

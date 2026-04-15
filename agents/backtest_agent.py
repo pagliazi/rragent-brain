@@ -5,6 +5,8 @@ BacktestAgent — 量化回测沙箱引擎
 回退: 本地 subprocess (当 SSH 不可用时)
 安全: 静态扫描 + 远程五层沙箱 + 超时
 """
+from __future__ import annotations
+
 
 import asyncio
 import hashlib

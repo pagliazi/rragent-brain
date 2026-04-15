@@ -4,6 +4,8 @@ MarketAgent — 行情监控
 数据源: Bridge API (139, 主) → 旧版 API (138) → AKShare (三级回退)
 不需要 LLM
 """
+from __future__ import annotations
+
 
 import asyncio
 import logging

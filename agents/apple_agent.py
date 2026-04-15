@@ -6,6 +6,8 @@ AppleAgent — macOS 生态管家
 
 重要: 必须以 GUI 用户(zayl) 运行，否则 osascript 无法访问 Calendar/Reminders 等 App
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

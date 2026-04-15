@@ -1,5 +1,8 @@
 """
 Anthropic LLM Provider — primary provider for RRAgent.
+
+Supports prompt caching (cache_control breakpoints) for ~75% input cost reduction
+on repeated context. Enable via prompt_caching=True in constructor.
 """
 
 from __future__ import annotations
@@ -16,12 +19,18 @@ logger = logging.getLogger("rragent.providers.anthropic")
 class AnthropicProvider(BaseLLMProvider):
     """Anthropic Claude API provider."""
 
-    def __init__(self, model: str = "claude-sonnet-4-6", api_key: str = ""):
+    def __init__(
+        self,
+        model: str = "claude-sonnet-4-6",
+        api_key: str = "",
+        prompt_caching: bool = True,
+    ):
         # Strip provider prefix
         if "/" in model:
             model = model.split("/", 1)[1]
         self.model = model
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY", "")
+        self.prompt_caching = prompt_caching
         self._client = None
 
     def _get_client(self):
@@ -48,8 +57,31 @@ class AnthropicProvider(BaseLLMProvider):
             "max_tokens": 8192,
             "messages": messages,
         }
-        if system:
-            kwargs["system"] = system
+
+        # Prompt caching: inject cache_control breakpoints
+        if self.prompt_caching:
+            try:
+                from rragent.runtime.providers.prompt_caching import (
+                    apply_anthropic_cache_control,
+                )
+                cached_messages, system_blocks = apply_anthropic_cache_control(
+                    messages,
+                    include_system=bool(system),
+                    system_text=system,
+                )
+                kwargs["messages"] = cached_messages
+                if system_blocks:
+                    kwargs["system"] = system_blocks
+                elif system:
+                    kwargs["system"] = system
+            except Exception as e:
+                logger.debug(f"Prompt caching setup failed, using plain messages: {e}")
+                if system:
+                    kwargs["system"] = system
+        else:
+            if system:
+                kwargs["system"] = system
+
         if tools:
             kwargs["tools"] = tools
 
@@ -118,8 +150,30 @@ class AnthropicProvider(BaseLLMProvider):
             "max_tokens": 8192,
             "messages": messages,
         }
-        if system:
-            kwargs["system"] = system
+
+        if self.prompt_caching:
+            try:
+                from rragent.runtime.providers.prompt_caching import (
+                    apply_anthropic_cache_control,
+                )
+                cached_messages, system_blocks = apply_anthropic_cache_control(
+                    messages,
+                    include_system=bool(system),
+                    system_text=system,
+                )
+                kwargs["messages"] = cached_messages
+                if system_blocks:
+                    kwargs["system"] = system_blocks
+                elif system:
+                    kwargs["system"] = system
+            except Exception as e:
+                logger.debug(f"Prompt caching setup failed: {e}")
+                if system:
+                    kwargs["system"] = system
+        else:
+            if system:
+                kwargs["system"] = system
+
         if tools:
             kwargs["tools"] = tools
 

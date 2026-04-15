@@ -21,6 +21,8 @@ DevAgent — 智能代码开发 Agent
 数据源: Claude Code CLI + SSH VM + DeepSeek LLM
 记忆: 操作链图谱 + 语义检索历史
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

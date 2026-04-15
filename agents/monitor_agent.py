@@ -7,6 +7,8 @@ MonitorAgent — 基础设施监控告警 Agent
 NOTE: macOS 对 Python.app 有网络沙箱限制，aiohttp/httpx 无法直连内网 192.168.1.x，
       所有外部 HTTP 请求统一走 subprocess + curl 绕过限制。
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

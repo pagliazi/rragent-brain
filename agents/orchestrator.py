@@ -5,6 +5,8 @@ Orchestrator — 统筹 Agent
       跨Agent记忆提醒引擎、数据源健康监控
       SOUL 身份守护、LLM 智能路由、主动综合简报
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

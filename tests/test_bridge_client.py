@@ -42,6 +42,7 @@ def bridge():
 
 # ─── API Schema 验证 ───
 
+@pytest.mark.live
 class TestAPISchema:
     """验证 139 的 OpenAPI schema 是否符合预期。"""
 
@@ -121,6 +122,7 @@ class TestBridgeClientMethods:
 
 # ─── 真实 API 调用测试 ───
 
+@pytest.mark.live
 class TestLiveAPI:
     """通过 bridge_relay 调用真实 139 API (需要网络连通)。"""
 

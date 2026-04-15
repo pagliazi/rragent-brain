@@ -9,6 +9,8 @@ NotifyRouter — 统一消息路由 + 渠道健康检查 + 故障转移
 - 故障转移: 主渠道离线时切到备用
 - pending 消息队列: 所有渠道离线时暂存
 """
+from __future__ import annotations
+
 
 import asyncio
 import json
