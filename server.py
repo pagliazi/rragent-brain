@@ -420,7 +420,7 @@ async def init_rragent():
 
     # 2. Hermes runtime
     hermes_runtime = HermesNativeRuntime(
-        hermes_path="/tmp/full-deploy-test/hermes-venv",
+        hermes_path=os.getenv("HERMES_PATH", "/Users/clawagent/hermes-agent"),
         model=os.getenv("RRAGENT_DEFAULT_MODEL", "qwen3.5-plus"),
     )
     if hermes_runtime.available:

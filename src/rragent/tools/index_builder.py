@@ -413,6 +413,38 @@ def build_tool_registry(
         registry.register_tier1(tool, index)
         yaml_only_count += 1
 
+    # ── Step 3b: Register new quant research/evolution tools as Tier 1 ──
+    try:
+        from rragent.tools.builtin.quant_tools import (
+            FactorResearchTool,
+            BacktestAnalysisTool,
+            StrategyOptimizeTool,
+            FactorEvolveTool,
+            FactorCompareTool,
+        )
+        quant_new_tools = [
+            FactorResearchTool(),
+            BacktestAnalysisTool(),
+            StrategyOptimizeTool(),
+            FactorEvolveTool(),
+            FactorCompareTool(),
+        ]
+        for qt in quant_new_tools:
+            idx = ToolIndex(
+                name=qt.spec.name,
+                description=qt.spec.description,
+                keywords=qt.spec.keywords,
+                agent="quant",
+                category=qt.spec.category,
+                timeout=qt.spec.timeout,
+                is_concurrent_safe=qt.spec.is_concurrent_safe,
+            )
+            registry.register_tier1(qt, idx)
+            tier1_count += 1
+        logger.info(f"Quant research tools registered: {len(quant_new_tools)} Tier 1")
+    except Exception as e:
+        logger.warning(f"Failed to register quant tools: {e}")
+
     # ── Step 3: Register hermes_delegate as Tier 1 tool ──
     if hermes_runtime is not None:
         try:
